@@ -1,0 +1,17 @@
+Hermes Bots live voice
+Copyright 2026 Clearspace
+
+Adapted from promptclickrun/bighelp-plugin, commit
+34f2a16938ba69185a7f5ed9fa4a963f9a9fe1b4 (Apache-2.0):
+loopdy_plugin/live_voice_auth.py, live_voice_provider.py, native_voice.py,
+and the verified-session / loopback grant pattern in native_context.py.
+Copyright the Loopdy / bighelp contributors.
+
+The provider transport and credential resolution are retained. The media hub is
+adapted to Hermes Bots dashboard routes. Gated requests use verified account
+ownership; loopback grants use dashboard-validated session-token ownership.
+BigHelp's native-context/precondition wrapper is narrowed to these media routes.
+No agent execution occurs here.
+The full license is in ../LICENSE.
+
+Tests adapted from tests/test_native_voice.py and tests/test_live_voice_provider.py at the same upstream revision.

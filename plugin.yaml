@@ -1,0 +1,96 @@
+name: hermes-bots
+version: 2.0.0
+license: Apache-2.0
+description: "The Hermes Bots app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and optional Model Routing (routing). A module that fails to load is reported by /api/plugins/hermes-bots/info; the others keep working."
+author: "Clearspace"
+requires_hermes: ">=0.21.5"
+python_dependencies:
+  - "httpx>=0.27,<1"
+  - "websockets>=15,<16"
+  - "pydantic>=2,<3"
+  - "cryptography>=43"
+# Files a gateway / bot process imports (hooks and what they call). `hermes-bots update` restarts the gateway only when
+# one of these changed; a change to any other file (routes, the scan worker, voice) needs `hermes serve` restarted only.
+restart:
+  gateway:
+    - __init__.py
+    - paths.py
+    - cards/__init__.py
+    - cards/alerts.py
+    - cards/cards.py
+    - cards/coordinator.py
+    - cards/creation.py
+    - cards/cron_archive.py
+    - cards/guard.py
+    - cards/notify.py
+    - cards/relay.py
+    - cards/store.py
+    - cards/tasks.py
+    - routing/__init__.py
+    - routing/classifier_io.py
+    - routing/jev.py
+    - routing/routing_v2.py
+    - routing/runtime_v2.py
+    - routing/settings.py
+    - mobile/__init__.py
+    - mobile/alerts.py
+    - mobile/devices.py
+    - mobile/events.py
+    - mobile/home.py
+    - mobile/outbox.py
+    - mobile/replies.py
+    - mobile/sealed.py
+    - mobile/state.py
+    - mobile/worker.py
+config_schema:
+  routing_mode:
+    type: str
+    default: ""
+    description: "Model Routing, off unless set: off (the app may still switch Auto model/effort per bot), shadow (record decisions, change nothing) or on. The retired jev-routing plugin's `mode` setting still works."
+  routing_key_file:
+    type: str
+    default: ""
+    description: "Optional path to the OpenRouter key Jev's classifier uses; default secrets/jev-openrouter-api-key under the Hermes home. No key means routing is unavailable, never an error."
+  card_guard:
+    type: str
+    default: "off"
+    description: "off | shadow | on. Turns a reply that should have been a card into one before it is saved."
+  card_guard_key_file:
+    type: str
+    default: ""
+    description: "Optional path to the OpenRouter key the card guard uses; defaults to Jev's."
+provides_tools:
+  - hermes_task_wait
+  - hermes_task_adjust
+  - hermes_card_summary
+  - hermes_card_metrics
+  - hermes_card_list
+  - hermes_card_checklist
+  - hermes_card_table
+  - hermes_card_timeline
+  - hermes_card_chart
+  - hermes_card_form
+  - hermes_card_selection
+  - hermes_card_message
+  - hermes_card_form_response
+  - jev_review
+provides_skills:
+  - native-cards
+  - jev-routing
+provides_hooks:
+  - post_tool_call
+  - transform_tool_result
+  - pre_llm_call
+  - transform_llm_output
+  - pre_tool_call
+  - kanban_task_blocked
+  - kanban_task_completed
+  - kanban_task_claimed
+  - on_kanban_dispatch_tick
+  - pre_approval_request
+  - post_approval_response
+  - post_llm_call
+  - on_session_end
+  - api_request_error
+provides_middleware:
+  - llm_request

@@ -1,0 +1,18 @@
+[project]
+name = "hermes-bots-plugin"
+version = "2.0.0"
+description = "The Hermes Bots plugin for Hermes: cards, mobile alerts, live voice and optional Model Routing. Installed into Hermes by the connector (hermes plugins install); this project only runs its tests."
+requires-python = ">=3.11"
+license = { text = "Apache-2.0" }
+# What `hermes plugins install` puts into Hermes's venv: Hermes reads [project].dependencies before plugin.yaml's
+# python_dependencies, so the two lists (and requirements.txt) must be identical (tests/test_plugin.py checks).
+# fastapi is Hermes's own and is NOT listed; it is a test dependency below.
+dependencies = [
+    "httpx>=0.27,<1",
+    "websockets>=15,<16",
+    "pydantic>=2,<3",
+    "cryptography>=43",
+]
+
+[tool.uv]
+package = false

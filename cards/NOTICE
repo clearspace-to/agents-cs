@@ -1,0 +1,18 @@
+Hermes Bots cards plugin
+Copyright 2026 Clearspace
+
+This plugin contains code adapted from bighelp-plugin
+(https://github.com/promptclickrun/bighelp-plugin, commit 34f2a16938ba69185a7f5ed9fa4a963f9a9fe1b4),
+Copyright the Loopdy / bighelp contributors, licensed under the Apache License, Version 2.0.
+
+Adapted parts: the strict-validation helpers, the form field kinds and submitted-value rules,
+the card-in-Markdown delivery idea (a fenced block carried in the durable assistant reply) and the
+form request / response flow (loopdy_generative_ui forms and loopdy_await_form_response), all in
+cards.py, store.py and __init__.py. They were renamed (hermes.card, hermes_card_*) and changed:
+our own card schema and component set, no hash verification, forms that do not expire after
+five minutes, and answers that arrive as an ordinary chat message.
+
+bighelp in turn credits Sameer Gupta's Generative UI DSL (https://github.com/sameergdogg/generative-ui)
+as an influence on its constrained, finite component catalog.
+
+The full licence text is in ../LICENSE.
