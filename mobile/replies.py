@@ -160,17 +160,38 @@ def has_tool_calls(value):
     return value not in (None, "", "[]", "null")
 
 
+def calls_card(value):
+    """Whether a row's tool calls include one of our card tools (``hermes_card_*``)."""
+    if not has_tool_calls(value):
+        return False
+    try:
+        calls = json.loads(value) if isinstance(value, str) else value
+    except ValueError:
+        return False
+    for call in calls if isinstance(calls, list) else []:
+        function = call.get("function") if isinstance(call, dict) else None
+        name = (function or {}).get("name") if isinstance(function, dict) else (call or {}).get("name") if isinstance(call, dict) else None
+        if isinstance(name, str) and name.startswith("hermes_card_"):
+            return True
+    return False
+
+
 def assistant_kind(row, answering, autonomous=False):
     """The Show in Chats kind of a bot message, given the kind of the prompt it answers (None when
     the person wrote it); None for a reply to the person. A silence marker is silent (Hermes' looser
     rule in scheduled and webhook chats). An answer to a machine message, tool notes included, takes
-    that message's kind; otherwise a message beside a tool call is a tool step. A job report's answer
+    that message's kind; otherwise a message beside a tool call is a tool step, except text beside a card
+    call, which is the answer. A job report's answer
     is a job summary, and its tool notes stay tool steps."""
     if (is_autonomous_silence if autonomous else is_silence)(row["content"]):
         return "silent"
     if answering and answering != "cron":
         return answering
     if has_tool_calls(row["tool_calls"]):
+        # Text written just before a card is the answer the card goes with, not a note about a tool:
+        # show it even when the bot ignored "put the whole answer in your final message" (Mark, 2026-10-18).
+        if calls_card(row["tool_calls"]) and (row["content"] or "").strip():
+            return None
         return "tools"
     if answering == "cron":
         return "summary"

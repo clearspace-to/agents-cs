@@ -668,3 +668,21 @@ class KindsTests(MobileCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TextBeforeACardIsTheReply(unittest.TestCase):
+    """Text a bot writes just before a card call is the answer that goes with the card (Mark, 2026-10-18)."""
+
+    def test_text_beside_a_card_call_is_shown_and_other_tool_notes_stay_hidden(self):
+        card = '[{"function": {"name": "hermes_card_selection", "arguments": "{}"}}]'
+        other = '[{"function": {"name": "web_search", "arguments": "{}"}}]'
+        rows = [
+            {"id": 1, "role": "user", "content": "Hi are you there", "display_kind": None, "tool_calls": None},
+            {"id": 2, "role": "assistant", "content": "Yes, I'm here. Your map is ready.", "display_kind": None, "tool_calls": card},
+            {"id": 3, "role": "assistant", "content": "Searching for that.", "display_kind": None, "tool_calls": other},
+            {"id": 4, "role": "assistant", "content": "", "display_kind": None, "tool_calls": card},
+        ]
+        kinds = replies.message_kinds(rows)
+        self.assertNotIn(2, kinds, "text before a card is the reply")
+        self.assertEqual(kinds.get(3), "tools")
+        self.assertEqual(kinds.get(4), "tools", "a bare card call stays a tool step")
