@@ -48,11 +48,12 @@ class Ctx:
 class ManifestTests(unittest.TestCase):
     def test_identity_and_version(self):
         data = manifest()
-        self.assertEqual((data["name"], data["version"], data["license"]), ("hermes-bots", "2.0.1", "Apache-2.0"))
+        self.assertEqual((data["name"], data["license"]), ("hermes-bots", "Apache-2.0"))
+        self.assertRegex(data["version"], r"^\d+\.\d+\.\d+$")
         self.assertEqual(root.VERSION, data["version"])
         self.assertEqual(root.NAME, data["name"])
         dashboard = json.loads((ROOT / "dashboard" / "manifest.json").read_text())
-        self.assertEqual((dashboard["name"], dashboard["api"], dashboard["version"]), ("hermes-bots", "plugin_api.py", "2.0.1"))
+        self.assertEqual((dashboard["name"], dashboard["api"], dashboard["version"]), ("hermes-bots", "plugin_api.py", data["version"]))
         self.assertTrue((ROOT / "dashboard" / dashboard["entry"]).is_file())
 
     def test_python_dependencies_match_requirements_txt(self):
@@ -178,7 +179,7 @@ class InfoAndRoutesTests(unittest.TestCase):
 
     def test_info(self):
         info = self.client(plugin_api("info")).get("/api/plugins/hermes-bots/info").json()
-        self.assertEqual((info["name"], info["version"]), ("hermes-bots", "2.0.1"))
+        self.assertEqual((info["name"], info["version"]), ("hermes-bots", root.VERSION))
         self.assertEqual(info["modules"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "off"})
         self.assertIn("hermes_version", info)
 
