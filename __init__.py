@@ -21,7 +21,7 @@ import importlib
 import logging
 from typing import Any
 
-VERSION = "2.1.0"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
+VERSION = "2.1.1"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
 NAME = "hermes-bots"
 MODULES = ("cards", "mobile", "voice", "routing")
 
