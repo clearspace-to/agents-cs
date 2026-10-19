@@ -1,6 +1,6 @@
 [project]
 name = "hermes-bots-plugin"
-version = "2.0.0"
+version = "2.0.1"
 description = "The Hermes Bots plugin for Hermes: cards, mobile alerts, live voice and optional Model Routing. Installed into Hermes by the connector (hermes plugins install); this project only runs its tests."
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }

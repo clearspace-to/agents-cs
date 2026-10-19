@@ -74,13 +74,43 @@ COLUMNS = ("id", "device_id", "created", "push_type", "priority", "collapse_id",
            "state", "attempts", "last_error")
 
 
+class DeliveryConnection(sqlite3.Connection):
+    """Nudge only after commit, including the scanner's multi-row transactions."""
+    nudge_path: Path | None = None
+    committed_changes = 0
+
+    def commit(self):
+        super().commit()
+        if self.total_changes != self.committed_changes:
+            self.committed_changes = self.total_changes
+            if self.nudge_path is not None:
+                try:
+                    fd = os.open(self.nudge_path, os.O_CREAT | os.O_WRONLY, 0o600)
+                    os.close(fd)
+                    self.nudge_path.touch()
+                except OSError:
+                    pass  # the connector's two-second backstop still sees the durable row
+
+    def __exit__(self, kind, value, traceback):
+        if kind is None:
+            try:
+                self.commit()
+            except BaseException:
+                self.rollback()
+                raise
+        else:
+            self.rollback()
+        return False
+
+
 def connect(path) -> sqlite3.Connection:
     """The delivery database, created (owner-only) with every table on first use. The caller closes it
     (``with closing(connect(path)) as con, con:`` commits and closes)."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
     fresh = not path.exists()
-    con = sqlite3.connect(path, timeout=10)
+    con = sqlite3.connect(path, timeout=10, factory=DeliveryConnection)
+    con.nudge_path = path.with_suffix(".nudge")
     con.row_factory = sqlite3.Row
     try:
         con.execute("PRAGMA journal_mode=WAL")
