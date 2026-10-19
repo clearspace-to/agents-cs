@@ -162,6 +162,16 @@ def replace_fences(text: str, replacement: Callable[[dict[str, Any] | None, str]
     return _FENCE_BLOCK.sub(swap, text or "")
 
 
+# What the person reads is the turn's final message. Text a bot writes before a tool call is commentary beside
+# the call and the app does not show it (Show the Bot's Work), so a bot told only to "add one short sentence" after a
+# card left its real answer in front of the call and the person got "Pick an option on the card." and nothing else:
+# Mark's "Hi are you there" to Friday, 2026-10-18.
+WHOLE_ANSWER = (
+    "The person sees only your final message, never text written before a tool call: put your whole answer there, "
+    "what they asked first, then at most one short sentence about the card."
+)
+
+
 def delivery(card: dict[str, Any], *, attached: bool) -> dict[str, Any]:
     """What the tool returns to the bot. ``attached``: this Hermes adds the card to the reply itself
     (``transform_llm_output`` runs before the reply is saved), so the bot must not copy it."""
@@ -169,13 +179,13 @@ def delivery(card: dict[str, Any], *, attached: bool) -> dict[str, Any]:
     if attached:
         result["instruction"] = (
             "The card is added below your reply in the Hermes Bots app automatically. Do not copy "
-            "the card or repeat its contents; at most add one short sentence of your own."
+            "the card or repeat its contents. " + WHOLE_ANSWER
         )
     else:
         result["display_markdown"] = fence(card)
         result["instruction"] = (
             "Include display_markdown exactly once in your reply, unchanged, on its own lines. "
-            "Add at most one short sentence of your own; don't repeat the card's contents."
+            "Don't repeat the card's contents. " + WHOLE_ANSWER
         )
     if card["type"] == "form":
         result["request_id"] = card["id"]

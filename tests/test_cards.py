@@ -69,6 +69,18 @@ class CardSchemaTests(unittest.TestCase):
         self.assertIn('do not ask again on the next run', instruction)
         self.assertNotIn('keep the draft and ask again next time', instruction)
 
+    def test_the_bot_is_told_to_put_its_whole_answer_after_the_card_call(self):
+        """2026-10-18: told only to "add one short sentence", Friday wrote its real answer before the card call, where the
+        app does not show it (commentary beside a tool call), and the person got "Pick an option on the card." alone."""
+        for card_type, args in EXAMPLES.items():
+            for attached in (True, False):
+                with self.subTest(card_type=card_type, attached=attached):
+                    card = cards.render(card_type, args, now=NOW, request_id_factory=lambda: "a" * 32)
+                    instruction = cards.delivery(card, attached=attached)["instruction"]
+                    self.assertIn("never text written before a tool call", instruction)
+                    self.assertIn("put your whole answer there", instruction)
+                    self.assertNotIn("at most add one short sentence of your own", instruction)
+
     def test_every_type_renders_and_round_trips(self):
         for card_type, args in EXAMPLES.items():
             with self.subTest(card_type):
