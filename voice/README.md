@@ -1,6 +1,6 @@
 # Hermes Bots live voice
 
-Media-only module of the `hermes-bots` Hermes plugin (was the `hermes-bots-voice` plugin), adapted from BigHelp (see NOTICE and LICENSE).
+Media-only module of the `hermes-bots` Hermes plugin (was the `hermes-bots-voice` plugin) (see NOTICE and LICENSE).
 No new port, chat executor, agent tools or changes to Hermes core. The app submits
 voice delegations through the same chat connection used for typed messages.
 
@@ -22,7 +22,7 @@ hashed for ownership. Unconfigured standalone routers, service-token grants and
 competing loopback Authorization headers are rejected. No provider tokens are
 returned to the phone.
 
-The native client requires an already opened, stored chat. Calls use BigHelp's Codex
+The native client requires an already opened, stored chat. Calls use the Codex
 provider and the host's Hermes credential resolver (the host's Codex subscription). Actual
 account access is checked on call setup; status alone does not prove eligibility. The
 API-key provider was removed in 1.3.0 (Mark, 2026-10-12); `provider` must be `codex_subscription`. The subscription endpoint is an upstream

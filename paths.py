@@ -63,21 +63,12 @@ def config() -> dict[str, Any]:
         return {}
 
 
-def settings(config_data: dict[str, Any] | None = None, *names: str) -> dict[str, Any]:
-    """``plugins.entries.<name>.settings`` merged over ``names`` (default: this plugin); earlier names win.
-
-    A setting still living under a retired plugin's name (``hermes-bots-cards``, ``jev-routing``) keeps
-    working until it is moved under ``hermes-bots``.
-    """
+def settings(config_data: dict[str, Any] | None = None) -> dict[str, Any]:
+    """This plugin's ``plugins.entries.hermes-bots.settings`` (the serving profile's config unless one is given)."""
     data = config() if config_data is None else config_data
-    entries = ((data.get("plugins") or {}).get("entries") or {})
-    merged: dict[str, Any] = {}
-    for name in reversed(names or ("hermes-bots",)):
-        entry = entries.get(name)
-        found = entry.get("settings") if isinstance(entry, dict) else None
-        if isinstance(found, dict):
-            merged.update(found)
-    return merged
+    entry = ((data.get("plugins") or {}).get("entries") or {}).get("hermes-bots")
+    found = entry.get("settings") if isinstance(entry, dict) else None
+    return dict(found) if isinstance(found, dict) else {}
 
 
 def secrets_dirs() -> list[Path]:

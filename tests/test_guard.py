@@ -2,6 +2,7 @@
 
     python3 -m unittest discover -s plugin/hermes-bots/tests
 """
+import importlib
 import json
 import sys
 import tempfile
@@ -129,6 +130,25 @@ class GuardTests(unittest.TestCase):
         def broken_jev(_reply):
             raise OSError("down")
         self.assertIsNone(self.run_guard(INCIDENT, classify=broken_jev))
+
+    def test_jev_is_asked_through_routings_client_with_the_guards_key(self):
+        jev = importlib.import_module(plugin.__name__.rsplit(".", 1)[0] + ".routing.jev")
+        calls = []
+
+        def request(state, questions, *, key=None, timeout=6):
+            calls.append((state, sorted(questions), key, timeout))
+            return {"answers": {"asks": {"choice": "yes", "confidence": 0.9}, "kind": {"choice": "choice", "confidence": 0.8}}}
+
+        with tempfile.TemporaryDirectory() as tmp:
+            key = Path(tmp) / "jev-key"
+            key.write_text("sk-guard\n")
+            with patch.object(guard, "_settings", return_value={"card_guard_key_file": str(key)}), \
+                    patch.object(jev, "request", side_effect=request):
+                decision = guard.jev_classify("Teams or email?")
+            with patch.object(guard, "_key_file", return_value=None), self.assertRaises(FileNotFoundError):
+                guard.jev_classify("Teams or email?")  # no key: run() fails open
+        self.assertEqual(calls, [({"reply": "Teams or email?"}, ["asks", "kind"], "sk-guard", guard.JEV_TIMEOUT)])
+        self.assertEqual(decision, {"asks": "yes", "asks_confidence": 0.9, "kind": "choice", "kind_confidence": 0.8})
 
     def test_shadow_decides_but_changes_nothing(self):
         self.assertIsNone(self.run_guard(INCIDENT, current_mode="shadow"))

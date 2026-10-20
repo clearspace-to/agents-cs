@@ -7,10 +7,9 @@ import sys
 import textwrap
 import unittest
 from pathlib import Path
-from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from mobile_support import IPAD, PHONE, MobileCase, alerts, events, home, replies, state, worker  # noqa: E402
+from mobile_support import IPAD, PHONE, MobileCase, alerts, events, home, replies, state  # noqa: E402
 
 TESTS = Path(__file__).resolve().parent
 
@@ -149,28 +148,19 @@ class EventTests(MobileCase):
         (task,) = self.call("GET", "/reads").json()["attention"]["tasks"]
         self.assertEqual((len(task["title"]), len(task["bot"]), len(task["kind"])), (200, 64, 20))
 
-    def test_dispatch_routes_by_the_old_bridge_names_and_never_raises(self):
-        events.dispatch("approvals", {"event": "requested", "profile": "jarvis", "session_id": "c", "command": "ls"})
-        events.dispatch("questions", {"event": "requested", "profile": "jarvis", "session_id": "c", "question": "?"})
-        events.dispatch("tasks", {"event": "requested", "task_id": "t_1", "bot": "jarvis"})
-        events.dispatch("attention", {"board": "", "count": 1, "tasks": []})
-        events.dispatch("nope", {})
-        events.dispatch("approvals", "not a dict")
-        self.assertEqual(len([r for r in self.queued() if r["push_type"] == "alert" and "category" in json.loads(r["payload_json"])["aps"]]), 3)
-        with patch.object(events, "_connect", side_effect=OSError("disk full")):
-            events.dispatch("approvals", {"event": "requested", "profile": "jarvis", "session_id": "c"})  # logged, not raised
 
 
 class NudgeAndHandOffTests(MobileCase):
-    def test_a_nudge_touches_the_file_the_worker_watches_and_wakes_this_process(self):
-        self.assertFalse(home.nudge_path().exists())
-        events.nudge("jarvis")
-        self.assertTrue(home.nudge_path().exists())
-        self.assertTrue(worker._wake.is_set())
+    def test_a_nudge_touches_the_file_the_connector_watches(self):
+        nudge = home.nudge_path()
+        self.assertEqual(nudge, home.delivery_path().with_suffix(".nudge"), "the file every outbox commit touches too")
+        self.assertFalse(nudge.exists())
+        events.nudge({"profile": "jarvis"})
+        self.assertTrue(nudge.exists())
 
     def test_an_event_from_a_profile_process_lands_in_the_roots_outbox(self):
-        """cards runs in a profile's gateway or a Kanban worker, mobile's worker only in the root's ``hermes serve``: the
-        outbox database is the whole hand-off (no HTTP, no key, no socket)."""
+        """cards runs in a profile's gateway or a Kanban worker, the scan and the drain in the connector: the outbox database
+        is the whole hand-off (no HTTP, no key, no socket)."""
         profile_home = self.root / "profiles" / "jarvis"
         script = textwrap.dedent("""
             import importlib, sys
@@ -178,8 +168,8 @@ class NudgeAndHandOffTests(MobileCase):
             import plugin_loader
             plugin_loader.load_root()
             events = importlib.import_module(plugin_loader.PACKAGE + ".mobile.events")
-            events.dispatch("approvals", {"event": "requested", "profile": "jarvis", "session_id": "chat", "command": "ls -la"})
-            events.dispatch("nudge", {"profile": "jarvis"})
+            events.approval({"event": "requested", "profile": "jarvis", "session_id": "chat", "command": "ls -la"})
+            events.nudge({"profile": "jarvis"})
             """ % str(TESTS))
         result = subprocess.run([sys.executable, "-c", script], capture_output=True, text=True, timeout=60,
                                 env={**os.environ, "HERMES_HOME": str(profile_home)})
@@ -188,22 +178,6 @@ class NudgeAndHandOffTests(MobileCase):
         self.assertEqual(self.opened(payload)["title"], "Jarvis needs approval")
         self.assertTrue(home.nudge_path().exists(), "the nudge file is beside the delivery database, in the root's home")
         self.assertEqual(home.nudge_path().parent, self.root / "hermes-bots")
-
-    def test_the_worker_picks_up_a_nudge_from_another_process_within_a_second(self):
-        import asyncio
-        import time
-
-        async def main():
-            worker._seen["nudge"] = worker._nudge_mtime()
-            started = time.monotonic()
-            asyncio.get_running_loop().call_later(0.3, home.nudge_path().touch)
-            await worker._sleep(8)
-            return time.monotonic() - started
-
-        (self.root / "hermes-bots").mkdir(exist_ok=True)
-        elapsed = asyncio.run(main())
-        self.assertLess(elapsed, 3)
-        self.assertGreaterEqual(elapsed, 0.2)
 
 
 if __name__ == "__main__":

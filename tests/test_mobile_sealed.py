@@ -21,14 +21,6 @@ needs_fixtures = unittest.skipUnless(FIXTURES.is_dir(), "qa/fixtures is not in t
 
 class VectorTests(unittest.TestCase):
     @needs_fixtures
-    def test_opens_bighelps_vector_with_their_labels(self):
-        # Same envelope format as bighelp-plugin's sealed_alerts.py: their published vector opens.
-        vector = json.loads((FIXTURES / "bighelp-sealed-alert-v2-vector.json").read_text())
-        opened = sealed.open_envelope(vector["envelope"], private_key(vector["recipientPrivateKey"]),
-                                      sealed.unb64url(vector["senderPublicKey"]), sealed.LOOPDY)
-        self.assertEqual(opened, vector["plaintext"])
-
-    @needs_fixtures
     def test_opens_our_vector(self):
         # The app's regression opens the same file, so the bridge and the extension can't drift apart.
         vector = json.loads((FIXTURES / "sealed-alert-v1-vector.json").read_text())

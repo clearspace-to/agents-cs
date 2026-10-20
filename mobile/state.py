@@ -1,7 +1,7 @@
 """Read state, inbox filters and badges: the parts of ``delivery.db`` the app's own requests change.
 
 ``reads`` and ``baselines`` are keyed by owner. A computer belongs to one account, and Hermes in the loopback mode the
-connector requires has no per-person login, so every request and the scan worker use ``OWNER`` unless Hermes's
+connector requires has no per-person login, so every request and the reply scan use ``OWNER`` unless Hermes's
 session names a user (``routes.owner_of``). ``views`` is keyed by the hub's device id (``X-Hermes-Bots-Device``).
 """
 from __future__ import annotations

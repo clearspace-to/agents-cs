@@ -4,18 +4,17 @@ Bots are told to ask questions and show structured answers as cards, but sometim
 prose ("I need two answers: 1. When is Tim back? 2. Teams or email?"). When the guard is on for a
 profile, every app reply that carries no card goes through two steps:
 
-1. Jev (TypeSafe's ``typesafe/jev-1.13`` through OpenRouter's decisions API, ~0.2 s) decides
-   whether it is plain text or should be a card, and which kind.
+1. Jev (TypeSafe's ``typesafe/jev-1.13`` through OpenRouter's decisions API, ~0.2 s; the client is
+   ``routing/jev.py``) decides whether it is plain text or should be a card, and which kind.
 2. Only when Jev says card: the profile's auxiliary model builds the cards from the reply, using
    this plugin's own card schemas. Every card is validated by ``cards.render``; the prose the
    cards replace is removed only where it matches the reply exactly.
 
 Fail-open throughout: any error, timeout or invalid card leaves the reply as written. Settings
-(``plugins.entries.hermes-bots.settings`` in the profile's config.yaml; the retired
-``hermes-bots-cards`` entry still works)::
+(``plugins.entries.hermes-bots.settings`` in the profile's config.yaml)::
 
     card_guard: "on"        # "on", "shadow" (decide and log only) or "off" (default)
-    card_guard_key_file: /path/to/openrouter-key   # optional; defaults to the Jev key
+    card_guard_key_file: /path/to/openrouter-key   # optional; defaults to routing's key (routing_key_file, else the Jev key)
 
 Each decision is logged without content (labels, confidences, timings, card types) to
 ``<hermes home>/logs/card-guard.jsonl``.
@@ -26,16 +25,12 @@ import json
 import os
 import re
 import time
-import urllib.request
 from pathlib import Path
 from typing import Any, Callable
 
 from . import cards
 
-JEV_ENDPOINT = "https://openrouter.ai/api/alpha/decisions"
-JEV_MODEL = "typesafe/jev-1.13"
 JEV_TIMEOUT = 2.5
-JEV_KEY_FILE = "jev-openrouter-api-key"   # under <hermes home>/secrets (this profile, then the root)
 CONVERT_TIMEOUT = 40
 MAX_REPLY = 12_000
 MAX_CARDS = 4
@@ -84,7 +79,7 @@ Card schemas (the "args" object for each type):
 
 def _settings() -> dict[str, Any]:
     from .. import paths
-    return paths.settings(None, "hermes-bots", "hermes-bots-cards")
+    return paths.settings()
 
 
 def mode() -> str:
@@ -97,20 +92,21 @@ def _hermes_home() -> Path:
     return paths.hermes_home()
 
 
-def _key_file() -> Path:
+def _key_file() -> Path | None:
+    """``card_guard_key_file`` when set, else routing's key file (``routing/settings.key_file``); None when there is none."""
     configured = _settings().get("card_guard_key_file")
     if configured:
         return Path(str(configured)).expanduser()
-    from .. import paths
-    return paths.find_secret(JEV_KEY_FILE) or _hermes_home() / "secrets" / JEV_KEY_FILE
+    from ..routing import settings as routing_settings
+    return routing_settings.key_file()
 
 
 def jev_classify(reply: str) -> dict[str, Any]:
-    body = json.dumps({"model": JEV_MODEL, "state": {"reply": reply}, "questions": QUESTIONS}).encode()
-    request = urllib.request.Request(JEV_ENDPOINT, data=body, headers={
-        "Authorization": "Bearer " + _key_file().read_text().strip(), "Content-Type": "application/json"})
-    with urllib.request.urlopen(request, timeout=JEV_TIMEOUT) as response:
-        answers = json.load(response)["answers"]
+    from ..routing import jev
+    key_file = _key_file()
+    if key_file is None:
+        raise FileNotFoundError("no OpenRouter key for Jev")
+    answers = jev.request({"reply": reply}, QUESTIONS, key=key_file.read_text().strip(), timeout=JEV_TIMEOUT)["answers"]
     asks, kind = answers.get("asks") or {}, answers.get("kind") or {}
     if asks.get("choice") not in {"yes", "no"} or kind.get("choice") not in KINDS:
         raise ValueError("invalid Jev answer")

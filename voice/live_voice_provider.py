@@ -237,17 +237,24 @@ def _instructions(instructions: str, context: Sequence[Mapping[str, Any]]) -> st
     return instructions
 
 
-class _LiveTransport:
-    """Shared bounded transport lifecycle, not a shared provider wire schema."""
+class CodexLiveProvider:
+    """A live voice call on the host's Codex subscription: the bounded transport lifecycle and Codex's wire schema."""
 
-    call_url: str
+    provider_kind = "codex_subscription"
+    model = CODEX_MODEL
+    protocol = "quicksilver_v2"
+    call_url = CODEX_CALL_URL
 
-    def __init__(self, *, auth: Any, http_client: Any = None,
+    def __init__(self, *, auth: Any = None, runtime_resolver: Callable[..., Any] | None = None,
+                 expected_account_id: str | None = None, http_client: Any = None,
                  websocket_connect: Callable[..., Any] | None = None,
                  on_event: Callable[[dict[str, Any]], Any] | None = None,
                  setup_timeout: float = 45, open_timeout: float = 15,
                  send_timeout: float = 5, close_timeout: float = 5,
                  event_timeout: float = 5, lease_seconds: float = 1800) -> None:
+        if auth is not None and runtime_resolver is not None:
+            raise LiveProviderError("ambiguous_auth")
+        auth = auth or CodexLiveAuth(runtime_resolver, expected_account_id=expected_account_id)
         limits = (setup_timeout, open_timeout, send_timeout, close_timeout, event_timeout, lease_seconds)
         if any(not isinstance(v, (int, float)) or not math.isfinite(v) or v <= 0 for v in limits):
             raise LiveProviderError("invalid_deadline")
@@ -329,7 +336,7 @@ class _LiveTransport:
             connector = NoRedirectConnect
         # A global debug setting must not turn handshake headers/frames into
         # durable logs. This private logger never propagates to host handlers.
-        wire_logger = logging.Logger("loopdy.live.redacted")
+        wire_logger = logging.Logger("hermes_bots.live.redacted")
         wire_logger.disabled = True
         wire_logger.propagate = False
         return await connector(url, additional_headers=headers,
@@ -375,7 +382,7 @@ class _LiveTransport:
                 self._auth = None
                 self._state = "waiting_started"
                 self._start_deadline = time.monotonic() + self._open_timeout
-                self._reader = asyncio.create_task(self._read_events(), name="loopdy-live-events")
+                self._reader = asyncio.create_task(self._read_events(), name="hermes-bots-live-events")
                 await self._after_attach()
                 if self._failure is not None:
                     raise self._failure
@@ -399,7 +406,12 @@ class _LiveTransport:
             self._setup_task = None
 
     def _create_payload(self, sdp: str, instructions: str, voice: str, context: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        raise NotImplementedError()
+        if voice not in VOICES:
+            raise LiveProviderError("unsupported_voice")
+        return {"sdp": sdp, "session": {"model": CODEX_MODEL,
+                "instructions": _instructions(instructions, context),
+                "audio": {"output": {"voice": voice}},
+                "delegation": {"type": "client", "ack_filler": False}}}
 
     def _sideband_url(self, call_id: str) -> str:
         return SIDEBAND_ORIGIN + call_id
@@ -425,18 +437,79 @@ class _LiveTransport:
         return self._state == "started"
 
     def _headers(self, credentials: LiveCredentials) -> dict[str, str]:
-        raise NotImplementedError()
+        if not credentials.account_id:
+            raise LiveAuthError()
+        return {**dict(credentials.identity_headers), "Authorization": "Bearer " + credentials.bearer,
+                "OpenAI-Alpha": "quicksilver=v2", "chatgpt-account-id": credentials.account_id,
+                "session-id": str(uuid.uuid4()), "thread-id": str(uuid.uuid4()), "x-session-id": str(uuid.uuid4())}
 
     def _decode_answer(self, answer: str, headers: Mapping[str, str]) -> tuple[str, str]:
-        raise NotImplementedError()
+        return validate_audio_sdp(answer), decode_call_id(headers)
 
     @staticmethod
     def decode_event(raw: Any) -> dict[str, Any] | None:
-        raise NotImplementedError()
+        event = _envelope(raw)
+        if event is None:
+            return None
+        kind = event.get("type")
+        if kind == "session.started":
+            session = event.get("session")
+            if not isinstance(session, Mapping):
+                return None
+            expires = session.get("expires_at")
+            if expires is not None and (isinstance(expires, bool) or not isinstance(expires, (int, float))
+                                        or not 0 < expires <= 1e12 or not math.isfinite(expires)):
+                return None
+            return {"kind": "started", **({"expires_at": expires} if expires is not None else {})}
+        if kind in ("input_transcript.added", "output_transcript.added"):
+            item = event.get("item")
+            if not isinstance(item, Mapping) or not _text(item.get("text")):
+                return None
+            return {"kind": "transcript_delta", "role": "user" if kind == "input_transcript.added" else "assistant", "text": item["text"]}
+        if kind == "turn.done":
+            turn = event.get("turn")
+            if (not isinstance(turn, Mapping) or turn.get("role") not in ("user", "assistant")
+                    or not _text(turn.get("transcript"))):
+                return None
+            return {"kind": "transcript_done", "role": turn["role"], "text": turn["transcript"]}
+        if kind == "delegation.created":
+            item = event.get("item")
+            if (not isinstance(item, Mapping) or item.get("type") != "delegation"
+                    or item.get("target") != "client" or not _opaque_id(item.get("id"))):
+                return None
+            content = item.get("content", [])
+            if not isinstance(content, list) or len(content) > 128:
+                return None
+            parts = []
+            for part in content:
+                if not isinstance(part, Mapping):
+                    return None
+                if part.get("type") == "input_text":
+                    if not _text(part.get("text")):
+                        return None
+                    parts.append(part["text"])
+            text = "".join(parts)
+            if not _text(text, nonempty=True):
+                return None
+            return {"kind": "delegation", "id": item["id"], "text": text}
+        if kind == "output_audio_buffer.cleared":
+            return {"kind": "audio_cleared"}
+        if kind == "output_audio.delta":
+            audio = event.get("audio")
+            if isinstance(audio, str) and _text(audio, MAX_FRAME_BYTES, nonempty=True) and re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", audio):
+                return {"kind": "audio_delta", "audio": audio}
+            return None
+        if kind == "error":
+            return _error_event(event)
+        return None
 
     @staticmethod
     def result_frames(delegation_id: str, text: str, *, quiet: bool = False) -> list[dict[str, Any]]:
-        raise NotImplementedError()
+        if not _opaque_id(delegation_id):
+            raise LiveProviderError("invalid_delegation_id", stage="append")
+        return [{"type": "delegation.context.append", "delegation_item_id": delegation_id,
+                 "channel": "commentary" if quiet else "speakable",
+                 "content": [{"type": "input_text", "text": chunk}]} for chunk in _chunks(text)]
 
     async def _emit(self, event: dict[str, Any]) -> None:
         if self._on_event is not None:
@@ -533,7 +606,7 @@ class _LiveTransport:
                     if self._state in {"closing", "closed"}:
                         return
                     if self._lease is None:
-                        self._lease = asyncio.create_task(self._expire(ttl), name="loopdy-live-lease")
+                        self._lease = asyncio.create_task(self._expire(ttl), name="hermes-bots-live-lease")
                     self._ready.set()
                 else:
                     await self._emit(event)
@@ -619,7 +692,7 @@ class _LiveTransport:
             self._state = "closing"
             self._ready.set()
             self._reader_idle.set()
-            self._cleanup_task = asyncio.create_task(self._cleanup(), name="loopdy-live-close")
+            self._cleanup_task = asyncio.create_task(self._cleanup(), name="hermes-bots-live-close")
         return self._cleanup_task
 
     async def _shutdown(self) -> None:
@@ -685,102 +758,6 @@ class _LiveTransport:
         await self._shutdown()
         return {"status": "local_closed", "cleanup_confirmed": self._cleanup_confirmed,
                 "allocation_state": self._allocation, "provider_finalized": self._provider_finalized}
-
-
-class CodexLiveProvider(_LiveTransport):
-    provider_kind = "codex_subscription"
-    model = CODEX_MODEL
-    protocol = "quicksilver_v2"
-    call_url = CODEX_CALL_URL
-
-    def __init__(self, *, auth: Any = None, runtime_resolver: Callable[..., Any] | None = None,
-                 expected_account_id: str | None = None, **kwargs: Any) -> None:
-        if auth is not None and runtime_resolver is not None:
-            raise LiveProviderError("ambiguous_auth")
-        super().__init__(auth=auth or CodexLiveAuth(runtime_resolver, expected_account_id=expected_account_id), **kwargs)
-
-    def _headers(self, credentials: LiveCredentials) -> dict[str, str]:
-        if not credentials.account_id:
-            raise LiveAuthError()
-        return {**dict(credentials.identity_headers), "Authorization": "Bearer " + credentials.bearer,
-                "OpenAI-Alpha": "quicksilver=v2", "chatgpt-account-id": credentials.account_id,
-                "session-id": str(uuid.uuid4()), "thread-id": str(uuid.uuid4()), "x-session-id": str(uuid.uuid4())}
-
-    def _create_payload(self, sdp: str, instructions: str, voice: str, context: Sequence[Mapping[str, Any]]) -> dict[str, Any]:
-        if voice not in VOICES:
-            raise LiveProviderError("unsupported_voice")
-        return {"sdp": sdp, "session": {"model": CODEX_MODEL,
-                "instructions": _instructions(instructions, context),
-                "audio": {"output": {"voice": voice}},
-                "delegation": {"type": "client", "ack_filler": False}}}
-
-    def _decode_answer(self, answer: str, headers: Mapping[str, str]) -> tuple[str, str]:
-        return validate_audio_sdp(answer), decode_call_id(headers)
-
-    @staticmethod
-    def decode_event(raw: Any) -> dict[str, Any] | None:
-        event = _envelope(raw)
-        if event is None:
-            return None
-        kind = event.get("type")
-        if kind == "session.started":
-            session = event.get("session")
-            if not isinstance(session, Mapping):
-                return None
-            expires = session.get("expires_at")
-            if expires is not None and (isinstance(expires, bool) or not isinstance(expires, (int, float))
-                                        or not 0 < expires <= 1e12 or not math.isfinite(expires)):
-                return None
-            return {"kind": "started", **({"expires_at": expires} if expires is not None else {})}
-        if kind in ("input_transcript.added", "output_transcript.added"):
-            item = event.get("item")
-            if not isinstance(item, Mapping) or not _text(item.get("text")):
-                return None
-            return {"kind": "transcript_delta", "role": "user" if kind == "input_transcript.added" else "assistant", "text": item["text"]}
-        if kind == "turn.done":
-            turn = event.get("turn")
-            if (not isinstance(turn, Mapping) or turn.get("role") not in ("user", "assistant")
-                    or not _text(turn.get("transcript"))):
-                return None
-            return {"kind": "transcript_done", "role": turn["role"], "text": turn["transcript"]}
-        if kind == "delegation.created":
-            item = event.get("item")
-            if (not isinstance(item, Mapping) or item.get("type") != "delegation"
-                    or item.get("target") != "client" or not _opaque_id(item.get("id"))):
-                return None
-            content = item.get("content", [])
-            if not isinstance(content, list) or len(content) > 128:
-                return None
-            parts = []
-            for part in content:
-                if not isinstance(part, Mapping):
-                    return None
-                if part.get("type") == "input_text":
-                    if not _text(part.get("text")):
-                        return None
-                    parts.append(part["text"])
-            text = "".join(parts)
-            if not _text(text, nonempty=True):
-                return None
-            return {"kind": "delegation", "id": item["id"], "text": text}
-        if kind == "output_audio_buffer.cleared":
-            return {"kind": "audio_cleared"}
-        if kind == "output_audio.delta":
-            audio = event.get("audio")
-            if isinstance(audio, str) and _text(audio, MAX_FRAME_BYTES, nonempty=True) and re.fullmatch(r"[A-Za-z0-9+/]*={0,2}", audio):
-                return {"kind": "audio_delta", "audio": audio}
-            return None
-        if kind == "error":
-            return _error_event(event)
-        return None
-
-    @staticmethod
-    def result_frames(delegation_id: str, text: str, *, quiet: bool = False) -> list[dict[str, Any]]:
-        if not _opaque_id(delegation_id):
-            raise LiveProviderError("invalid_delegation_id", stage="append")
-        return [{"type": "delegation.context.append", "delegation_item_id": delegation_id,
-                 "channel": "commentary" if quiet else "speakable",
-                 "content": [{"type": "input_text", "text": chunk}]} for chunk in _chunks(text)]
 
     async def append_context(self, text: str, *, quiet: bool = True) -> dict[str, Any]:
         frames = [{"type": "session.context.append", "channel": "commentary" if quiet else "speakable",

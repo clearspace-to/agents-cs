@@ -160,9 +160,3 @@ def set_view(view: View, request: Request):
         raise HTTPException(503, "Read state is unavailable right now")
     return {"ok": True, "count": count}
 
-
-def on_mount() -> None:
-    """Called by ``dashboard/plugin_api.py`` once these routes are mounted in ``hermes serve``: start the scan worker
-    here when ``register(ctx)`` couldn't (no event loop yet). Does nothing outside the root home."""
-    from . import worker
-    worker.start()

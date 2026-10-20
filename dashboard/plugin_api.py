@@ -55,8 +55,6 @@ def _mount(name: str) -> None:
         module = importlib.import_module("%s.%s.routes" % (_PACKAGE, name))
         router.include_router(module.router)
         MODULES[name] = "ok"
-        if hasattr(module, "on_mount"):  # mobile: start the scan worker in this (dashboard) process
-            module.on_mount()
     except Exception as exc:  # noqa: BLE001 - a module that can't load is reported, not fatal
         _log.warning("hermes-bots: %s routes not mounted: %s", name, exc, exc_info=True)
         MODULES[name] = _root._error(exc)

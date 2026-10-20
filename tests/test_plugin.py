@@ -56,10 +56,6 @@ class ManifestTests(unittest.TestCase):
         self.assertEqual((dashboard["name"], dashboard["api"], dashboard["version"]), ("hermes-bots", "plugin_api.py", data["version"]))
         self.assertTrue((ROOT / "dashboard" / dashboard["entry"]).is_file())
 
-    def test_python_dependencies_match_requirements_txt(self):
-        required = [line.strip() for line in (ROOT / "requirements.txt").read_text().splitlines() if line.strip()]
-        self.assertEqual(sorted(manifest()["python_dependencies"]), sorted(required))
-
     def test_pyproject_lists_the_same_runtime_dependencies_and_not_fastapi(self):
         """Hermes installs pyproject's [project].dependencies in preference to plugin.yaml's list."""
         try:
@@ -187,7 +183,7 @@ class InfoAndRoutesTests(unittest.TestCase):
         paths = self.paths(plugin_api("paths"))
         for subpath in ("/forms/{request_id}/submit", "/forms/{request_id}", "/decisions", "/decisions/close",
                         "/kanban/specify/{task_id}", "/kanban/decompose/{task_id}", "/kanban/prepare-new/{task_id}",
-                        "/kanban/creation-settings", "/tasks/board", "/ssh/host-key", "/voice/{operation}", "/info"):
+                        "/kanban/creation-settings", "/tasks/board", "/voice/{operation}", "/info"):
             self.assertIn(subpath, paths)
         self.assertNotIn("/routing/{operation}", paths, "routing is off unless configured")
 
@@ -258,7 +254,7 @@ before = {m for m in heavy if m in sys.modules}
 module.register(Ctx())
 print(json.dumps({"status": module.STATUS, "loaded": sorted(m for m in heavy if m in sys.modules and m not in before),
                   "voice": [m for m in sys.modules if m.startswith("hermes_bots.voice.")],
-                  "mobile": sorted(m for m in sys.modules if m.startswith("hermes_bots.mobile.") and not m.endswith((".worker", ".home")))}))
+                  "mobile": sorted(m for m in sys.modules if m.startswith("hermes_bots.mobile."))}))
 """
 
 

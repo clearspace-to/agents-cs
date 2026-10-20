@@ -4,22 +4,20 @@ key, no socket).
 
 Callable from ANY Hermes process that loads the plugin (``hermes serve``, a gateway, a Kanban worker, a profile's
 process): each function seals the alert for every device and writes the rows to ``<root home>/hermes-bots/delivery.db``,
-which the connector drains; SQLite is the hand-off. ``nudge`` asks the scan worker (in ``hermes serve``, root home) to
-look for finished replies now: in this process by an event, from any other by touching a file the worker watches
-(otherwise its 10 s scan finds the reply anyway).
+which the connector drains; SQLite is the hand-off. ``nudge`` asks the connector, which scans for finished replies
+(``scan.py``), to look now by touching the file it watches (otherwise its 2 s cycle finds the reply anyway).
 
-``dispatch(path, body)`` is the shape ``cards/notify.py`` posts in (the old bridge route names: ``approvals``,
-``questions``, ``tasks``, ``attention``, ``nudge``); a malformed event is ignored, never raised into Hermes.
+``cards/notify.py`` calls these by name (``approval``, ``question``, ``task``, ``attention``, ``nudge``) on a daemon
+thread; a malformed event is ignored, and a failure is logged there, never raised into Hermes.
 """
 from __future__ import annotations
 
 import logging
 import re
-import sqlite3
 import uuid
 from contextlib import closing
 
-from . import alerts, home, replies, state, worker
+from . import alerts, home, replies, state
 
 log = logging.getLogger("hermes_bots.mobile")
 
@@ -36,15 +34,14 @@ def _connect():
     return closing(alerts.store().connect())
 
 
-def nudge(profile: str = "") -> None:
-    """A bot just saved a finished turn (no content): have the scan worker look now."""
-    worker.wake()
+def nudge(_event: dict | None = None) -> None:
+    """A bot just saved a finished turn (the event names only its profile): have the connector scan now."""
     try:
         folder = home.state_dir()
         folder.mkdir(parents=True, exist_ok=True, mode=0o700)
         home.nudge_path().touch()
     except OSError:
-        pass  # the 10 s scan is the fallback
+        pass  # the connector's 2 s cycle is the fallback
 
 
 def approval(event: dict) -> None:
@@ -168,17 +165,3 @@ def attention(event: dict) -> list[str]:
              report["count"], len(report["tasks"]), report["decisions"], len(resolved))
     return resolved
 
-
-_ROUTES = {"approvals": approval, "questions": question, "tasks": task, "attention": attention}
-
-
-def dispatch(path: str, body: dict) -> None:
-    """The one entry ``cards/notify.py`` uses: ``path`` is ``approvals``, ``questions``, ``tasks``, ``attention`` or
-    ``nudge``. Never raises."""
-    try:
-        if path == "nudge":
-            nudge(str(body.get("profile") or ""))
-        elif path in _ROUTES and isinstance(body, dict):
-            _ROUTES[path](body)
-    except (sqlite3.Error, OSError, ValueError, TypeError, KeyError) as error:
-        log.warning("hermes-bots mobile: %s event failed: %s", path, type(error).__name__)

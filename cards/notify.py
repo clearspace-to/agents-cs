@@ -2,11 +2,12 @@
 Observer only, like the approval alerts (``alerts.py``): every post runs on a daemon thread and any failure is
 dropped, so a slow or absent alert path never slows Hermes.
 
-Since 2.0 there is no bridge process and no HTTP: ``post`` calls ``mobile.events.dispatch`` in-process, which seals the
-alert for each device and writes it to the outbox (``<root home>/hermes-bots/delivery.db``) that the connector drains.
-That works from any Hermes process (a worker or a profile's gateway included), because SQLite is the hand-off.
+Since 2.0 there is no bridge process and no HTTP: ``post(kind, body)`` calls ``mobile.events.<kind>(body)`` in-process,
+which seals the alert for each device and writes it to the outbox (``<root home>/hermes-bots/delivery.db``) that the
+connector drains. That works from any Hermes process (a worker or a profile's gateway included), because SQLite is the
+hand-off. The kinds are ``approval``, ``question`` and ``nudge`` (``alerts.py``) and these two:
 
-* ``tasks``     ``{event: requested|resolved, board, task_id, title, bot, kind, reason}`` rings the phone
+* ``task``      ``{event: requested|resolved, board, task_id, title, bot, kind, reason}`` rings the phone
                 ("Friday needs your decision on …") or clears that alert everywhere.
 * ``attention`` ``{board, count, tasks: [{id, title, bot, kind}], decisions}``: what the app icon badge counts beside
                 unread chats, and the list diffed to clear alerts for tasks that stopped needing the person on the
@@ -16,6 +17,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import threading
 import time
 from typing import Any
@@ -28,31 +30,31 @@ _lock = threading.Lock()
 _last_attention: dict[str, tuple[str, float]] = {}
 # Tests swap this for a recorder; production hands the event to the mobile module in-process.
 transport = None
+log = logging.getLogger("hermes_bots.mobile")
 
 
-def _deliver(path: str, body: dict[str, Any]) -> None:
+def _deliver(kind: str, body: dict[str, Any]) -> None:
     try:
         from ..mobile import events
-        events.dispatch(path, body)
-    except Exception:  # noqa: BLE001 - an observer: never into Hermes
-        pass
+        getattr(events, kind)(body)
+    except Exception as error:  # noqa: BLE001 - an observer: never into Hermes
+        log.warning("hermes-bots mobile: %s event failed: %s", kind, type(error).__name__)
 
 
-def post(path: str, body: dict[str, Any], *, wait: bool = False, timeout: float = 2.0) -> None:
-    """Hand an event to the mobile module on a daemon thread (``wait`` runs it inline, for the route handlers' tests).
-    ``timeout`` is kept for callers that pass it; the in-process hand-off has none to apply."""
+def post(kind: str, body: dict[str, Any], *, wait: bool = False) -> None:
+    """Hand an event to ``mobile.events.<kind>`` on a daemon thread (``wait`` runs it inline, for tests)."""
     if transport is not None:
-        transport(path, body)
+        transport(kind, body)
         return
     if wait:
-        _deliver(path, body)
+        _deliver(kind, body)
     else:
-        threading.Thread(target=_deliver, args=(path, body), name="hermes-bots-notify", daemon=True).start()
+        threading.Thread(target=_deliver, args=(kind, body), name="hermes-bots-notify", daemon=True).start()
 
 
 def task_event(event: str, *, board: str | None, task_id: str, title: str | None, bot: str | None,
                kind: str, reason: str | None = None) -> None:
-    post("tasks", {"event": event, "board": board or "", "task_id": task_id, "title": (title or "")[:200],
+    post("task", {"event": event, "board": board or "", "task_id": task_id, "title": (title or "")[:200],
                    "bot": bot or "", "kind": kind, "reason": (reason or "")[:400]})
 
 

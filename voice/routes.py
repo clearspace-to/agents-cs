@@ -21,7 +21,7 @@ MODELS = {"status": native._Status, "offer": native._Offer, "poll": native._Poll
 
 
 def _owner(request: Request):
-    """Adapt BigHelp native_context's verified-session / loopback grant split.
+    """The verified-session / loopback grant split.
 
     Never treat a caller-selected legacy header as identity behind the auth gate.
     Do not mount this router outside Hermes' authenticated plugin API.

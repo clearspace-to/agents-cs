@@ -40,8 +40,8 @@ class NativeFallbackTests(unittest.TestCase):
   self.e.pinned=lambda *a:True;self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[])
   self.e.pinned=lambda *a:False;self.prepare('explicit','Use high reasoning for this');self.assertIsNone(self.request('explicit'));self.assertEqual(self.calls,[])
  def test_shadow_cannot_apply_after_enable(self):
-  self.cfg['plugins']['entries']['jev-routing']['settings']['mode']='shadow';self.answer=reply('complex');self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[1])
-  self.cfg['plugins']['entries']['jev-routing']['settings']['mode']='on';self.assertIsNone(self.request())
+  self.cfg['plugins']['entries']['hermes-bots']['settings']['routing_mode']='shadow';self.answer=reply('complex');self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[1])
+  self.cfg['plugins']['entries']['hermes-bots']['settings']['routing_mode']='on';self.assertIsNone(self.request())
  def test_code_and_actions_not_low(self):
   for n,response in enumerate([reply('simple','code'),reply('simple','general','action')]):
    self.answer=response;self.prepare(str(n));self.assertEqual(self.request(str(n))['request']['reasoning']['effort'],'medium')

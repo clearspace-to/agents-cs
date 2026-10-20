@@ -37,15 +37,14 @@ There is no bridge process, port, key or APNs credential on the Hermes computer.
   written by `hermes-bots connect`) points at `<connector home>/devices.json` (`{updated, devices: [{id, name, platform,
   recipient_public_key}]}`) and `<connector home>/sender-key.pem` (the P-256 key that signs alerts; the plugin only reads it).
   Without them nothing is sent, and the log says so once.
-* **Scan worker.** In `hermes serve` of the root home, a Hermes background task (`ctx.spawn_task`; a thread when no event
-  loop is running yet) scans the root and every profile's `state.db` every 10 s or at once on a nudge, applies each
-  device's inbox filter, and writes one sealed row per device to the outbox. Gateways, workers and profile homes never run
-  it; one worker per computer is enforced by a lock file. An unavailable lock prevents startup; unload waits
-  for an active scan thread before releasing it. The scan cursor covers only the batch queued, even if a read
+* **Reply scan.** `mobile/scan.py` runs in the connector, not in Hermes: before every drain (every 2 s, or at once on a
+  nudge) it reads the root and every profile's `state.db`, applies each device's inbox filter, and writes one sealed row
+  per device to the outbox. Nothing in Hermes runs it. The scan cursor covers only the batch queued, even if a read
   or badge refresh discovers newer replies during delivery.
 * **Events** (approvals, clarify questions, board tasks, the badge) come from `cards` through `mobile.events`, called
   in-process from whichever Hermes process saw them; each writes sealed rows to the same outbox, so SQLite is the only
-  hand-off between processes. A finished turn nudges the worker by touching `<root home>/hermes-bots/nudge`.
+  hand-off between processes. A finished turn nudges the connector's scan by touching `<root home>/hermes-bots/delivery.nudge`
+  (the file every outbox commit touches too).
 * **The outbox** is `<root home>/hermes-bots/delivery.db`, `outbox(id, device_id, created, push_type, priority, collapse_id,
   expiration, payload_json, state, attempts, last_error)`, with `mobile/outbox.py` (`Outbox.enqueue`, `claim_queued`, `mark`,
   `purge`) as the API the connector imports to drain it, send a `push` frame per row and mark it `sent`, `failed` or `dropped`.
@@ -56,7 +55,7 @@ There is no bridge process, port, key or APNs credential on the Hermes computer.
 ## Routes
 
 Everything is under `/api/plugins/hermes-bots/`, behind Hermes's own dashboard authentication:
-`forms/…`, `decisions…`, `kanban/…`, `tasks/…`, `actions/…`, `ssh/host-key` (cards); `mobile/reads`, `mobile/replies`,
+`forms/…`, `decisions…`, `kanban/…`, `tasks/…`, `actions/…` (cards); `mobile/reads`, `mobile/replies`,
 `mobile/kinds`, `mobile/view`, `mobile/usage` (mobile; the device is the hub's `X-Hermes-Bots-Device` header, the owner
 Hermes's session user, else the computer's one owner); `voice/<op>` (voice); `routing/<op>` (routing, when configured); `info`.
 There is no device registration route.
@@ -64,18 +63,18 @@ There is no device registration route.
 ## Settings (`plugins.entries.hermes-bots.settings` in config.yaml)
 
 - `routing_mode`: `off` | `shadow` | `on`. Setting it (even to `off`) makes Model Routing available; the app switches
-  Auto model / Auto effort per bot. The retired jev-routing plugin's `mode` setting, or an existing
-  `<home>/jev-routing-v2.sqlite`, also counts as configured.
+  Auto model / Auto effort per bot. An existing `<home>/jev-routing-v2.sqlite` also counts as configured. Settings
+  under the retired plugins' names (`hermes-bots-cards`, `jev-routing`) are no longer read.
 - `routing_key_file`: OpenRouter key for Jev's classifier; default `secrets/jev-openrouter-api-key` under the Hermes
   home. No key means routing is unavailable (the chat keeps its model), never an error.
-- `card_guard`: `off` | `shadow` | `on`, and `card_guard_key_file`.
+- `card_guard`: `off` | `shadow` | `on`, and `card_guard_key_file` (default: routing's key above).
 
 ## Where it keeps things
 
 Every path comes from Hermes's home API (`hermes_constants.get_hermes_home` / `get_default_hermes_root`), never a
 hard-coded home. Data files keep the names the earlier plugins gave them: `<root>/hermes-bots-cards/forms.db`,
 `<root>/hermes-bots-cards/cron-archive.db`, `<home>/hermes-bots-voice/voices.json`, `<home>/jev-routing-v2.sqlite`.
-New in 2.0, fresh (nothing migrates): `<root>/hermes-bots/delivery.db`, `connector.json`, `nudge`, `worker.lock`.
+New in 2.0, fresh (nothing migrates): `<root>/hermes-bots/delivery.db` (and its `delivery.nudge`), `connector.json`.
 
 ## Tests
 

@@ -17,6 +17,7 @@ import threading
 from datetime import datetime
 
 from . import home
+from .sealed import PREVIEW_LIMIT, preview  # noqa: F401  the banner preview, shared with the Claude Code host
 
 
 def sources():
@@ -391,7 +392,7 @@ def index_for(profile, path):
 
 
 def known_index(profile):
-    """The index of a profile the worker has already read (``None`` before its first scan)."""
+    """The index of a profile the scan has already read (``None`` before its first scan)."""
     return _indexes.get(profile)
 
 
@@ -406,32 +407,6 @@ def newest_id(path):
         return 0
     with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source:
         return source.execute("SELECT COALESCE(MAX(id),0) FROM messages").fetchone()[0]
-
-
-PREVIEW_LIMIT = 240
-_MARKS = re.compile(r"(\*\*|__|`+|^#+\s*|^>\s*)", re.MULTILINE)
-
-
-# A native card (the hermes-bots-cards plugin) travels in the reply as a fenced JSON block; a banner
-# shows its title instead.
-_CARD = re.compile(r"^ {0,3}```hermes-card[ \t]*\n(.*?)\n {0,3}```[ \t]*$", re.MULTILINE | re.DOTALL)
-
-
-def _card_title(match):
-    try:
-        title = json.loads(match.group(1)).get("title")
-    except (ValueError, AttributeError):
-        return match.group(0)
-    return "\n" + title + "\n" if isinstance(title, str) else ""
-
-
-def preview(content):
-    """First lines of the reply, Markdown marks stripped, cut to what a banner shows."""
-    content = _CARD.sub(_card_title, content or "")
-    text = " ".join(line.strip() for line in _MARKS.sub("", content).splitlines() if line.strip())
-    if len(text) > PREVIEW_LIMIT:
-        text = text[:PREVIEW_LIMIT - 1].rstrip() + "\u2026"
-    return text or "Your reply is ready."
 
 
 def reply_text(profile, row_id):

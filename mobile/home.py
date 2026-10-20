@@ -8,20 +8,23 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-from .. import paths
+try:
+    from .. import paths
+except ImportError:  # the connector imports this folder on its own, as ``hermes_bots_shared``; it calls ``use_root``
+    paths = None
+
+_root: Path | None = None
+
+
+def use_root(path) -> None:
+    """Set the root home for a process outside Hermes: the connector, which runs ``scan.cycle`` for its Hermes."""
+    global _root
+    _root = Path(path)
 
 
 def root() -> Path:
     """The Hermes root home (also when this process serves a profile)."""
-    return paths.hermes_root()
-
-
-def is_root_home() -> bool:
-    """Whether this process serves the root home (not a profile): only then does it run the scan worker."""
-    try:
-        return Path(paths.hermes_home()).resolve() == Path(root()).resolve()
-    except OSError:
-        return False
+    return _root if _root is not None else paths.hermes_root()
 
 
 def state_dir() -> Path:
@@ -34,8 +37,9 @@ def delivery_path() -> Path:
 
 
 def nudge_path() -> Path:
-    """Touched by any process that wants the scan worker (in ``hermes serve``) to look now."""
-    return state_dir() / "nudge"
+    """Beside the delivery database: touched after every outbox commit and when a turn finishes. The connector checks
+    it every 100 ms and then scans and drains at once."""
+    return delivery_path().with_suffix(".nudge")
 
 
 def connector_info() -> dict:

@@ -35,9 +35,9 @@ class ConfiguredTests(unittest.TestCase):
 
     def test_the_new_setting_the_old_setting_and_an_existing_store_each_configure_it(self):
         with tempfile.TemporaryDirectory() as home:
-            for given in (config(**{"hermes-bots": {"routing_mode": "shadow"}}), config(**{"jev-routing": {"mode": "on"}}),
-                          config(**{"hermes-bots": {"routing_mode": "off"}})):
+            for given in (config(**{"hermes-bots": {"routing_mode": "shadow"}}), config(**{"hermes-bots": {"routing_mode": "off"}})):
                 self.assertTrue(settings.configured(given, home), given)
+            self.assertFalse(settings.configured(config(**{"jev-routing": {"mode": "on"}}), home), "the 1.x name is not read")
             (Path(home) / "jev-routing-v2.sqlite").write_text("")
             self.assertTrue(settings.configured({}, home), "a profile jev-routing already set up keeps routing")
 
@@ -47,19 +47,19 @@ class ConfiguredTests(unittest.TestCase):
         self.assertEqual(settings.mode(yaml.safe_load(text % "on")), "on")
         self.assertEqual(settings.configured_mode(yaml.safe_load(text % "off")), "off")
 
-    def test_hermes_bots_setting_wins_over_the_retired_one(self):
+    def test_only_the_hermes_bots_setting_counts(self):
         given = config(**{"hermes-bots": {"routing_mode": "shadow"}, "jev-routing": {"mode": "on"}})
         self.assertEqual(settings.mode(given), "shadow")
-        self.assertEqual(settings.mode(config(**{"jev-routing": {"mode": "on"}})), "on")
+        self.assertEqual(settings.mode(config(**{"jev-routing": {"mode": "on"}})), "off")
 
-    def test_the_engine_reads_either_setting(self):
+    def test_the_engine_reads_the_setting(self):
         def controls(given):
             with tempfile.TemporaryDirectory() as home:  # a fresh store: the first policy() persists the default
                 engine = v2.Engine(Path(home), lambda: given, lambda: {}, api=lambda *a: {})
                 self.addCleanup(engine.pool.shutdown)
                 return engine.controls("s")["mode"]
         self.assertEqual(controls({}), "off")
-        self.assertEqual(controls(config(**{"jev-routing": {"mode": "on"}})), "on")
+        self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "on"}})), "on")
         self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "shadow"}})), "shadow")
         self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "off"}})), "off")
 

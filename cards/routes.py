@@ -21,7 +21,6 @@ answer is refused before the app sends the person's message.
 from __future__ import annotations
 
 import re
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Body, HTTPException, Query
@@ -188,17 +187,3 @@ def kanban_decompose(task_id: str, body: dict[str, Any] = Body(default={}),
     if result.get("child_ids"):
         _decisions.record_containment(_tasks.normalize_slug(board), task_id, [c for c in result["child_ids"] if isinstance(c, str)])
     return result
-
-
-@router.get("/ssh/host-key")
-def ssh_host_key() -> dict[str, str]:
-    """Authenticate the SSH server through the already-authenticated HTTPS connection.
-    Only OpenSSH's public host key is exposed; no key path is accepted from the request.
-    """
-    try:
-        key = Path("/etc/ssh/ssh_host_ed25519_key.pub").read_text().strip()
-    except OSError:
-        raise HTTPException(status_code=503, detail="SSH host key unavailable. Enable Remote Login on the Hermes Mac.")
-    if not key.startswith("ssh-ed25519 "):
-        raise HTTPException(status_code=503, detail="Unsupported SSH host key")
-    return {"public_key": " ".join(key.split()[:2])}

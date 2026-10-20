@@ -1,4 +1,0 @@
-httpx>=0.27,<1
-websockets>=15,<16
-pydantic>=2,<3
-cryptography>=43

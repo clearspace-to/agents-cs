@@ -25,7 +25,7 @@ class Recorder:
         self.posts.append((path, body))
 
     def events(self, kind=None):
-        return [b for p, b in self.posts if p == "tasks" and (kind is None or b["event"] == kind)]
+        return [b for p, b in self.posts if p == "task" and (kind is None or b["event"] == kind)]
 
     def attention(self):
         return [b for p, b in self.posts if p == "attention"]

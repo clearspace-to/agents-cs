@@ -115,18 +115,14 @@ class HermesContractTests(unittest.TestCase):
         self.assertIsInstance(redact_sensitive_text("OPENAI_API_KEY=sk-abcdefghijklmnopqrstuvwxyz0123456789"), str)
 
     def test_what_the_mobile_module_relies_on(self):
-        # mobile/worker.py and mobile/routes.py: the supervised-task API, the session a dashboard route can read, the root
-        # home, and the columns of the bots' state.db that decide what counts as a reply (mobile/replies.py).
+        # mobile/routes.py and mobile/scan.py: the session a dashboard route can read, the root home, and the columns of the bots' state.db that decide what counts as a reply (mobile/replies.py).
         import sqlite3
         import tempfile
         from pathlib import Path
-        from hermes_cli.plugins import PluginContext
         from hermes_cli.dashboard_auth.base import Session
         from hermes_constants import get_default_hermes_root
         from hermes_state import SessionDB
         self.assertTrue(callable(get_default_hermes_root))
-        parameters = inspect.signature(PluginContext.spawn_task).parameters
-        self.assertIn("name", parameters, "PluginContext.spawn_task(coro, *, name=) is how the scan worker is registered")
         self.assertIn("user_id", {field for field in getattr(Session, "__dataclass_fields__", {})})
         with tempfile.TemporaryDirectory() as folder:
             path = Path(folder) / "state.db"

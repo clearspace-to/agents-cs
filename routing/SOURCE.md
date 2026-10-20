@@ -19,8 +19,8 @@ Copied (not moved: the source repo stays as it is) from the Jev routing plugin, 
 - Hard-coded home paths replaced by Hermes's home API through `../paths.py`
   (`get_hermes_home`, `get_default_hermes_root`). Data files stay where they were: `<home>/jev-routing-v2.sqlite`,
   `<home>/logs/jev-routing-events.jsonl`, `<hermes root>/logs/jev-routing-api.log`, `<home>/jev.disabled`.
-- Off unless configured (`settings.py`): `plugins.entries.hermes-bots.settings.routing_mode`, or the old
-  `plugins.entries.jev-routing.settings.mode`, or an existing store.
+- Off unless configured (`settings.py`): `plugins.entries.hermes-bots.settings.routing_mode`, or an existing store.
+  (The old `plugins.entries.jev-routing.settings.mode` stopped counting on 2026-10-20.)
 - The OpenRouter key is `secrets/jev-openrouter-api-key` under the profile's Hermes home, then the root's (or
   the `routing_key_file` setting). A missing key means "routing unavailable" (`classifier_unavailable`, the chat
   keeps its model; `jev_review` answers `routing_unavailable`), never an error.

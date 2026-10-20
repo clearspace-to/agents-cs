@@ -6,9 +6,8 @@ computer list. Apple carries opaque bytes; the phone's notification extension ch
 and shows the alert. (Until 2.0 this file lived in ``scripts/mobile-push`` beside the push bridge.)
 
 Adapted from bighelp-plugin's ``sealed_alerts.py`` (https://github.com/promptclickrun/bighelp-plugin,
-Apache License 2.0; copy in ``vendor-backup/bighelp-plugin/LICENSE``). The envelope format is theirs;
-the labels, the plaintext fields and the size limit are ours. ``LOOPDY`` reproduces their labels so
-the tests can check this code against their published test vector.
+Apache License 2.0; see ../LICENSE). The envelope format is theirs; the labels, the plaintext fields
+and the size limit are ours.
 
 Format (binary fields unpadded base64url):
 - AAD: label, installation, eventId, recipientKeyId, senderKeyId, issued (newline-joined)
@@ -22,6 +21,7 @@ import base64
 import hashlib
 import json
 import os
+import re
 import time
 import zlib
 from collections import namedtuple
@@ -36,7 +36,6 @@ from cryptography.hazmat.primitives.kdf.hkdf import HKDF
 Format = namedtuple("Format", "version aad key signature")
 HERMES = Format(1, "hermes-bots-sealed-alert-v1", b"hermes-bots-sealed-alert-key-v1\0",
                 b"hermes-bots-sealed-alert-signature-v1")
-LOOPDY = Format(2, "loopdy-sealed-alert-v2", b"loopdy-sealed-alert-key-v2\0", b"loopdy-sealed-alert-signature-v2")
 
 
 def b64url(value: bytes) -> str:
@@ -145,8 +144,38 @@ def open_envelope(envelope: dict, recipient_private, sender_public: bytes, fmt: 
 
 # --- What an alert carries -------------------------------------------------------------------------------
 # Moved here from apns.py in 2.0 (apns.py is now only the hub's APNs client): the payload a device gets, sealed.
+# The plugin's alerts and the Claude Code host's both use these, so the two never word or size an alert differently.
 
 PAYLOAD_LIMIT = 4096  # APNs' limit for a notification
+
+# What Apple sees on a sealed alert. The extension replaces it, and names the bot itself even when it
+# can't open one, so a failure shows "<Bot>: New message", never the reply.
+REPLY_PLACEHOLDER = {"title": "Hermes Bots", "body": "New message"}
+APPROVAL_PLACEHOLDER = {"title": "Approval needed", "body": "Open Hermes Bots to review the request."}
+QUESTION_PLACEHOLDER = {"title": "Question", "body": "Open Hermes Bots to answer."}
+TASK_PLACEHOLDER = {"title": "A task needs you", "body": "Open Hermes Bots to review it."}
+
+PREVIEW_LIMIT = 240
+_MARKS = re.compile(r"(\*\*|__|`+|^#+\s*|^>\s*)", re.MULTILINE)
+# A native card travels in the reply as a fenced JSON block; a banner shows its title instead.
+_CARD = re.compile(r"^ {0,3}```hermes-card[ \t]*\n(.*?)\n {0,3}```[ \t]*$", re.MULTILINE | re.DOTALL)
+
+
+def _card_title(match):
+    try:
+        title = json.loads(match.group(1)).get("title")
+    except (ValueError, AttributeError):
+        return match.group(0)
+    return "\n" + title + "\n" if isinstance(title, str) else ""
+
+
+def preview(content) -> str:
+    """First lines of the reply, Markdown marks stripped, cut to what a banner shows."""
+    content = _CARD.sub(_card_title, content or "")
+    text = " ".join(line.strip() for line in _MARKS.sub("", content).splitlines() if line.strip())
+    if len(text) > PREVIEW_LIMIT:
+        text = text[:PREVIEW_LIMIT - 1].rstrip() + "\u2026"
+    return text or "Your reply is ready."
 
 
 def with_full_text(payload: dict, text) -> dict:

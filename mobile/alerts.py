@@ -13,15 +13,10 @@ import time
 import uuid
 
 from . import devices, home, outbox, replies, sealed, state
+# What Apple sees on a sealed alert; shared with the Claude Code host.
+from .sealed import APPROVAL_PLACEHOLDER, QUESTION_PLACEHOLDER, REPLY_PLACEHOLDER, TASK_PLACEHOLDER  # noqa: F401
 
 log = logging.getLogger("hermes_bots.mobile")
-
-# What Apple sees on a sealed alert. The extension replaces it, and names the bot itself even when it
-# can't open one, so a failure shows "<Bot>: New message", never the reply.
-REPLY_PLACEHOLDER = {"title": "Hermes Bots", "body": "New message"}
-APPROVAL_PLACEHOLDER = {"title": "Approval needed", "body": "Open Hermes Bots to review the request."}
-QUESTION_PLACEHOLDER = {"title": "Question", "body": "Open Hermes Bots to answer."}
-TASK_PLACEHOLDER = {"title": "A task needs you", "body": "Open Hermes Bots to review it."}
 
 REPLY_EXPIRY = 86400  # a reply alert is useless after a day
 EVENT_EXPIRY = 3600   # approvals, questions, tasks and badge updates after an hour
@@ -103,7 +98,7 @@ def queue_reply(con, device: devices.Device, profile: str, chat: str, row_id, te
     created = time.time() if created is None else created
     identity = reply_identity(device.id, profile, row_id)
     bot = replies.display_name(profile)
-    body = (replies.STUCK_NOTE if stuck else "") + replies.preview(text)
+    body = (replies.STUCK_NOTE if stuck else "") + sealed.preview(text)
     # category "reply": the app's long-press actions (Reply, Mark as Read), as in Messages.
     aps = {"alert": {"title": bot, "body": body}, "thread-id": profile + ":" + chat, "mutable-content": 1,
            "category": "reply", "badge": badge, "sound": "default"}

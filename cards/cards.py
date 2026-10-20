@@ -688,7 +688,7 @@ def _submitted_value(field: dict[str, Any], value: Any) -> Any:
     _raise("invalid_value", "Unsupported field kind")
 
 
-# --- Strict JSON helpers (adapted from bighelp's generative_ui.py) ------------------------------
+# --- Strict JSON helpers (see cards/NOTICE) ------------------------------------------------------
 
 def canonical_json(value: Any) -> str:
     try:

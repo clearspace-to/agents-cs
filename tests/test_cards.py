@@ -190,7 +190,7 @@ class CardSchemaTests(unittest.TestCase):
 
     def test_envelope_checks(self):
         card = cards.render("summary", EXAMPLES["summary"])
-        for label, change in {"version": {"version": 2}, "schema": {"schema": "loopdy.card"}, "type": {"type": "weather"},
+        for label, change in {"version": {"version": 2}, "schema": {"schema": "other.card"}, "type": {"type": "weather"},
                               "id": {"id": "XYZ"}, "extra": {"script": "x"}, "expires on display": {"expires_at": "2026-10-01T00:00:00Z"}}.items():
             with self.subTest(label):
                 with self.assertRaises(cards.CardError):
@@ -510,12 +510,7 @@ class DashboardRouteTests(unittest.TestCase):
                 app = FastAPI()
                 app.include_router(api.router, prefix="/api/plugins/hermes-bots")
                 client = TestClient(app)
-                with patch.object(api.Path, "read_text", return_value="ssh-ed25519 public-fixture-key host-comment"):
-                    host = client.get("/api/plugins/hermes-bots/ssh/host-key")
-                    self.assertEqual(host.status_code, 200)
-                    self.assertEqual(host.json(), {"public_key": "ssh-ed25519 public-fixture-key"})
-                with patch.object(api.Path, "read_text", side_effect=OSError("unavailable")):
-                    self.assertEqual(client.get("/api/plugins/hermes-bots/ssh/host-key").status_code, 503)
+                self.assertEqual(client.get("/api/plugins/hermes-bots/ssh/host-key").status_code, 404)
                 base = f"/api/plugins/hermes-bots/forms/{card['id']}"
                 self.assertEqual(client.get(base, params={"profile": "friday"}).json()["state"], "pending")
                 bad = client.post(base + "/submit", json={"profile": "friday", "values": {}}).json()

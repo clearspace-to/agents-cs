@@ -2,7 +2,7 @@
 """Hermes Bots, the app's host side, as one Hermes plugin made of modules:
 
 * ``cards``   native cards, forms, decisions, alerts, tasks, coordinator, creation, cron archive, guard, relay
-* ``mobile``  alerts and read state for the app (was the push bridge): the scan worker, the outbox the connector drains
+* ``mobile``  alerts and read state for the app (was the push bridge): the reply scan (run by the connector), the outbox it drains
               and ``/mobile/*`` routes
 * ``voice``   live voice media routes (dashboard only: nothing to register in a bot worker)
 * ``routing`` Model Routing (was the ``jev-routing`` plugin); optional, off unless configured
@@ -21,7 +21,7 @@ import importlib
 import logging
 from typing import Any
 
-VERSION = "2.1.1"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
+VERSION = "2.2.0"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
 NAME = "hermes-bots"
 MODULES = ("cards", "mobile", "voice", "routing")
 

@@ -2,9 +2,8 @@
 
 Routing is an optional module of the ``hermes-bots`` plugin and is **off unless configured**: a profile has it
 when ``plugins.entries.hermes-bots.settings.routing_mode`` is set (``off`` | ``shadow`` | ``on``; ``off`` still
-lets the app switch Auto model / Auto effort on per bot), when the retired ``jev-routing`` plugin's
-``plugins.entries.jev-routing.settings.mode`` is set, or when the profile already has a routing store
-(``<home>/jev-routing-v2.sqlite``, written by jev-routing and kept where it is, so nothing migrates).
+lets the app switch Auto model / Auto effort on per bot), or when the profile already has a routing store
+(``<home>/jev-routing-v2.sqlite``, written by the retired jev-routing plugin and kept where it is).
 """
 from pathlib import Path
 
@@ -13,20 +12,18 @@ STORE_FILE = 'jev-routing-v2.sqlite'
 KEY_FILE = 'jev-openrouter-api-key'
 
 
-def _entry(config, name):
-    entries = ((config or {}).get('plugins') or {}).get('entries') or {}
-    entry = entries.get(name)
-    settings = entry.get('settings') if isinstance(entry, dict) else None
-    return settings if isinstance(settings, dict) else {}
+def _entry(config):
+    from .. import paths
+    return paths.settings(config or {})
 
 
 def configured_mode(config):
-    """The mode set in config (hermes-bots wins over the retired jev-routing entry), or None when unset."""
-    for value in (_entry(config, 'hermes-bots').get('routing_mode'), _entry(config, 'jev-routing').get('mode')):
-        if isinstance(value, bool):  # YAML 1.1 reads an unquoted on/off as true/false
-            return 'on' if value else 'off'
-        if isinstance(value, str) and value.strip().lower() in MODES:
-            return value.strip().lower()
+    """The mode set in config (``routing_mode``), or None when unset."""
+    value = _entry(config).get('routing_mode')
+    if isinstance(value, bool):  # YAML 1.1 reads an unquoted on/off as true/false
+        return 'on' if value else 'off'
+    if isinstance(value, str) and value.strip().lower() in MODES:
+        return value.strip().lower()
     return None
 
 
@@ -65,7 +62,7 @@ def key_file(config=None):
     ``routing_key_file`` in the settings wins; else ``secrets/jev-openrouter-api-key`` under this profile's
     Hermes home, then the Hermes root's."""
     from .. import paths
-    configured_path = _entry(config if config is not None else paths.config(), 'hermes-bots').get('routing_key_file')
+    configured_path = _entry(config if config is not None else paths.config()).get('routing_key_file')
     if configured_path:
         candidate = Path(str(configured_path)).expanduser()
         return candidate if candidate.is_file() else None

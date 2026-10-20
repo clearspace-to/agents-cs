@@ -31,7 +31,7 @@ def mobile(name):
 paths = importlib.import_module(PACKAGE + ".paths")
 home, devices, outbox, sealed = mobile("home"), mobile("devices"), mobile("outbox"), mobile("sealed")
 replies, state, alerts, scan = mobile("replies"), mobile("state"), mobile("alerts"), mobile("scan")
-events, worker, routes = mobile("events"), mobile("worker"), mobile("routes")
+events, routes = mobile("events"), mobile("routes")
 
 PHONE, IPAD = "dev_phone00000000000000000000", "dev_ipad000000000000000000000"
 HEADERS = {"X-Hermes-Bots-Device": PHONE}
@@ -73,8 +73,6 @@ class MobileCase(unittest.TestCase):
             self.addCleanup(patcher.stop)
         replies._indexes.clear()
         devices.forget()
-        worker.reset()
-        self.addCleanup(worker.reset)
         self.addCleanup(devices.forget)
         self.phone, self.ipad = Device(PHONE), Device(IPAD)
         self.sender_path = self.connector / "sender-key.pem"

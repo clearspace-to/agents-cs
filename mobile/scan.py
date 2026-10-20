@@ -1,7 +1,8 @@
 """The scan: new person-facing replies in the root home's and every profile's ``state.db`` become sealed outbox rows,
 one per device whose inbox filter lists the chat.
 
-Runs in ``worker.py`` (``hermes serve``, root home) every 10 s or on a nudge. The first look at a profile only records
+Runs in the Hermes Bots connector (outside Hermes; ``home.use_root`` names the root home) every 2 s and at once on a
+nudge, just before it drains the outbox. The first look at a profile only records
 where it is (a cursor), so starting never floods old replies. A scheduled run's alert is first ``held``: the run's
 result rings once, from the main chat, so the run's own alert waits while Hermes hands the result over and is dropped
 once it got there (``replies.run_handoff``); it rings only when the hand-off didn't happen.
@@ -107,7 +108,7 @@ def release_held(con, now=None) -> int:
 
 
 def cycle(now=None) -> None:
-    """One pass of the worker: scan every source, then settle the held alerts. Each source is isolated: one unreadable
+    """One pass: scan every source, then settle the held alerts. Each source is isolated: one unreadable
     database never stops the others."""
     ob = alerts.store()
     try:

@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from mobile_support import (HEADERS, IPAD, PHONE, MobileCase, alerts, outbox, replies, scan, sealed,  # noqa: E402
-                            state, worker)
+                            state)
 
 
 class ReplyScanTests(MobileCase):

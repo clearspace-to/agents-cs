@@ -7,7 +7,7 @@ Observer only: it never answers, delays or blocks an approval, a tool or a turn 
 return nothing, so they never veto or rewrite a call). A clarify tool call is a bot asking the
 person a question: its start alerts and its return clears the alert. A finished turn
 (``post_llm_call``, fired once Hermes has saved the reply) sends only the profile name, no content:
-it nudges the mobile module's scan worker, which reads the saved reply and alerts by its own rules. Each event is
+it nudges the connector's scan (``mobile/scan.py``), which reads the saved reply and alerts by its own rules. Each event is
 handed over from a daemon thread; any failure is dropped silently. The command is redacted with Hermes' own
 redactor before it leaves this module.
 """
@@ -42,8 +42,8 @@ def _redact(text) -> str:
     return text[:600]
 
 
-def _post(body: dict, path: str = "approvals") -> None:
-    notify.post(path, body)
+def _post(body: dict, kind: str = "approval") -> None:
+    notify.post(kind, body)
 
 
 def _event(kind: str, kwargs: dict, allow_session: bool = False) -> None:
@@ -119,14 +119,14 @@ def on_tool(**kwargs) -> None:
         return
     question, count = _question(kwargs.get("args"))
     _post({"event": "requested", "profile": _profile(), "session_id": str(kwargs.get("session_id") or ""),
-           "question": question, "count": count}, "questions")
+           "question": question, "count": count}, "question")
 
 
 def on_tool_done(**kwargs) -> None:
     if kwargs.get("tool_name") != "clarify":
         return
     _post({"event": "resolved", "profile": _profile(), "session_id": str(kwargs.get("session_id") or "")},
-          "questions")
+          "question")
 
 
 def on_turn(**kwargs) -> None:

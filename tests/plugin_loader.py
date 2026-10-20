@@ -29,16 +29,12 @@ def load_module(name):
 
 
 def load_plugin_api(label="fresh"):
-    """A fresh copy of ``dashboard/plugin_api.py`` (what ``hermes serve`` imports). The mobile module's scan worker, which
-    mounting would start in a real ``hermes serve``, is switched off here."""
-    from unittest.mock import patch
+    """A fresh copy of ``dashboard/plugin_api.py`` (what ``hermes serve`` imports)."""
     load_root()
-    worker = importlib.import_module("%s.mobile.worker" % PACKAGE)
     spec = importlib.util.spec_from_file_location("hermes_dashboard_plugin_test_" + label, ROOT / "dashboard" / "plugin_api.py")
     module = importlib.util.module_from_spec(spec)
     sys.modules[spec.name] = module
-    with patch.object(worker, "start", return_value="off"):
-        spec.loader.exec_module(module)
+    spec.loader.exec_module(module)
     return module
 
 

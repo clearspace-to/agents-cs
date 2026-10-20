@@ -78,13 +78,14 @@ class HomeResolutionTests(unittest.TestCase):
 
 class SettingsAndSecretsTests(unittest.TestCase):
     CONFIG = {"plugins": {"entries": {
-        "hermes-bots": {"settings": {"card_guard": "on"}},
+        "hermes-bots": {"settings": {"card_guard": "on", "card_guard_key_file": "/keys/jev"}},
         "hermes-bots-cards": {"settings": {"card_guard": "shadow", "card_guard_key_file": "/legacy"}}}}}
 
-    def test_settings_merge_with_the_new_name_winning(self):
-        merged = paths.settings(self.CONFIG, "hermes-bots", "hermes-bots-cards")
-        self.assertEqual(merged, {"card_guard": "on", "card_guard_key_file": "/legacy"})
-        self.assertEqual(paths.settings(self.CONFIG), {"card_guard": "on"})
+    def test_settings_come_only_from_this_plugins_entry(self):
+        self.assertEqual(paths.settings(self.CONFIG), {"card_guard": "on", "card_guard_key_file": "/keys/jev"})
+        retired = {"plugins": {"entries": {"hermes-bots-cards": {"settings": {"card_guard": "on"}},
+                                           "jev-routing": {"settings": {"mode": "on"}}}}}
+        self.assertEqual(paths.settings(retired), {}, "the 1.x plugin names are no longer read")
         self.assertEqual(paths.settings({}), {})
 
     def test_secret_is_found_in_the_profile_then_the_root(self):
@@ -99,13 +100,20 @@ class SettingsAndSecretsTests(unittest.TestCase):
                 (profile / "secrets" / "jev-openrouter-api-key").write_text("profile")
                 self.assertEqual(paths.find_secret("jev-openrouter-api-key"), profile / "secrets" / "jev-openrouter-api-key")
 
-    def test_card_guard_reads_the_new_settings_and_the_old_ones(self):
+    def test_card_guard_reads_its_settings_and_falls_back_to_routings_key(self):
         guard = importlib.import_module(root.__name__ + ".cards.guard")
         with patch.object(paths, "config", return_value=self.CONFIG):
             self.assertEqual(guard.mode(), "on")
-            self.assertEqual(str(guard._key_file()), "/legacy")
+            self.assertEqual(str(guard._key_file()), "/keys/jev")
         with patch.object(paths, "config", return_value={"plugins": {"entries": {"hermes-bots-cards": {"settings": {"card_guard": "shadow"}}}}}):
-            self.assertEqual(guard.mode(), "shadow")
+            self.assertEqual(guard.mode(), "off")
+        with tempfile.TemporaryDirectory() as tmp:
+            key = Path(tmp) / "secrets" / "jev-openrouter-api-key"
+            key.parent.mkdir()
+            with patch.dict(sys.modules, fake_hermes(tmp, tmp)), patch.object(paths, "config", return_value={}):
+                self.assertIsNone(guard._key_file())
+                key.write_text("k")
+                self.assertEqual(guard._key_file(), key, "the Jev key under secrets/, as routing finds it")
 
 
 if __name__ == "__main__":

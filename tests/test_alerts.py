@@ -67,7 +67,7 @@ class AlertEventTests(unittest.TestCase):
     def test_request_sends_redacted_bounded_command_and_session_identity(self):
         alerts.on_request(session_id="s1", session_key="k1", command="x" * 900, description="Do it", surface="gateway")
         (path, body), = self.sent
-        self.assertEqual(path, "approvals")
+        self.assertEqual(path, "approval")
         self.assertEqual(body["event"], "requested")
         self.assertEqual((body["session_id"], body["session_key"], body["surface"]), ("s1", "k1", "gateway"))
         self.assertEqual(len(body["command"]), 600, "Commands are truncated before they leave Hermes")
@@ -106,9 +106,9 @@ class AlertEventTests(unittest.TestCase):
         plugin.on_post_tool_call(tool_name="terminal", args={}, session_id="s1")
         plugin.on_pre_tool_call(tool_name="clarify", args={"question": "Ship it?", "choices": ["Yes", "No"]}, session_id="s1")
         self.assertEqual(self.sent, [
-            ("questions", {"event": "requested", "profile": "default", "session_id": "s1", "question": "Which day?", "count": 2}),
-            ("questions", {"event": "resolved", "profile": "default", "session_id": "s1"}),
-            ("questions", {"event": "requested", "profile": "default", "session_id": "s1", "question": "Ship it?", "count": 1}),
+            ("question", {"event": "requested", "profile": "default", "session_id": "s1", "question": "Which day?", "count": 2}),
+            ("question", {"event": "resolved", "profile": "default", "session_id": "s1"}),
+            ("question", {"event": "requested", "profile": "default", "session_id": "s1", "question": "Ship it?", "count": 1}),
         ])
 
     def test_finished_turn_nudges_with_the_profile_only(self):
@@ -127,18 +127,26 @@ class AlertTransportTests(unittest.TestCase):
     def test_hands_the_event_to_the_mobile_module_in_process(self):
         done, calls = threading.Event(), []
 
-        def dispatch(path, body):
-            calls.append((path, body))
+        def nudge(body):
+            calls.append(body)
             done.set()
 
-        with patch.object(self.events, "dispatch", side_effect=dispatch):
+        with patch.object(self.events, "nudge", side_effect=nudge):
             alerts.on_turn(assistant_response="Done.")
             self.assertTrue(done.wait(5))
-        self.assertEqual(calls, [("nudge", {"profile": "default"})])
+        self.assertEqual(calls, [{"profile": "default"}])
+
+    def test_each_kind_is_the_mobile_function_of_that_name(self):
+        for kind in ("approval", "question", "task", "attention", "nudge"):
+            with patch.object(self.events, kind) as handler:
+                notify.post(kind, {"event": "resolved"}, wait=True)
+            handler.assert_called_once_with({"event": "resolved"})
 
     def test_a_failure_is_dropped_silently(self):
-        with patch.object(self.events, "dispatch", side_effect=RuntimeError("outbox locked")):
-            notify.post("tasks", {"event": "resolved", "task_id": "t"}, wait=True)  # does not raise
+        with patch.object(self.events, "task", side_effect=RuntimeError("outbox locked")):
+            notify.post("task", {"event": "resolved", "task_id": "t"}, wait=True)  # does not raise
+        notify.post("approvals", {}, wait=True)  # nor does a kind that doesn't exist
+        notify.post("approval", "not a dict", wait=True)  # nor a malformed event
 
     def test_the_alert_path_talks_to_no_bridge(self):
         here = Path(plugin.__file__).parent

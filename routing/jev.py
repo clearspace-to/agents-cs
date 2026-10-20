@@ -25,13 +25,14 @@ PRESETS = {
 }
 SECRET = re.compile(r'(?i)(apikey_[a-z0-9_]+|\bsk-[a-z0-9_-]{16,}|bearer\s+[a-z0-9._-]{12,}|-----BEGIN .*PRIVATE KEY|(?:api[_-]?key|password|access_token|client_secret)\s*["\x27]?\s*[:=]\s*["\x27]?[^\s"\x27]{8,})')
 
-def request(state, questions):
+def request(state, questions, *, key=None, timeout=6):
+    """One Jev decision. ``key`` defaults to routing's OpenRouter key (the card guard passes its own)."""
     data = json.dumps({'model': MODEL, 'state': state, 'questions': questions}).encode()
     if SECRET.search(data.decode()):
         raise ValueError('credential-like content refused')
     req = urllib.request.Request(ENDPOINT, data=data, headers={
-        'Authorization': 'Bearer ' + settings.api_key(), 'Content-Type': 'application/json'})
-    with urllib.request.urlopen(req, timeout=6) as response:
+        'Authorization': 'Bearer ' + (key or settings.api_key()), 'Content-Type': 'application/json'})
+    with urllib.request.urlopen(req, timeout=timeout) as response:
         return json.load(response)
 
 def records_from_file(source, workspace):
