@@ -281,9 +281,10 @@ def _render_handler(card_type: str, *, store: FormStore, profile: str, attached:
                 card["id"] = decisions.record(card, profile=profile, session_id=session_id)
             result = cards.delivery(card, attached=attached)
             task_id = os.environ.get("HERMES_KANBAN_TASK")
-            if task_id and decisions is not None and cards.is_decision(card):
-                # A worker's decision is answered from the task board, not a chat: bind it and have the
-                # worker park the task until the answer lands as a comment (Mark, 2026-10-05).
+            if task_id and decisions is not None and cards.wants_answer(card):
+                # A worker's question is answered from the task board, not a chat: bind it and have the
+                # worker park the task until the answer lands as a comment (Mark, 2026-10-05). Every form,
+                # not only one-menu ones: an unbound form waits in a session nobody sees (2026-10-20).
                 result.update(_bind(decisions, card, profile=profile, task_id=task_id))
             if attached:
                 _remember(session_id, card)

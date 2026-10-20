@@ -264,6 +264,14 @@ def is_decision(card: dict[str, Any]) -> bool:
     return len(menus) == 1 and len(menus) + len(texts) == len(fields) and not any(f.get("required") for f in texts)
 
 
+def wants_answer(card: dict[str, Any]) -> bool:
+    """A card the person answers in the app (the app's ``Decision`` rule): every form and selection, a
+    drafted message, and a checklist with a submit button. A Kanban worker's are bound to its task,
+    whatever their shape: nobody sees a worker's own session (2026-10-20)."""
+    return card.get("type") in {"form", "selection", "message"} or (
+        card.get("type") == "checklist" and "submit_label" in (card.get("data") or {}))
+
+
 def validate_submission(form_data: dict[str, Any], values: Any) -> dict[str, Any]:
     """Check a person's form answer against the stored form. Returns the values canonical."""
     if not isinstance(values, dict):

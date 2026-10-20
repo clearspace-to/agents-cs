@@ -806,6 +806,27 @@ class PluginHookTests(unittest.TestCase):
         self.assertNotIn("next_step", chat)
         self.assertEqual(len(plugin._DECISIONS.open(profile="friday")), 1)
 
+    def test_worker_form_of_any_shape_is_bound(self):
+        # A worker's multi-field form waited in the worker's own session, which nobody sees (2026-10-20).
+        handler = self.ctx.tools["hermes_card_form"][1]
+        form = {"title": "Approve the hotel", "description": "Inn on the Twenty, 1 night.", "submit_label": "Approve",
+                "fields": [{"id": "hotel", "kind": "select", "label": "Hotel", "required": True,
+                            "options": [{"id": "inn", "label": "Inn"}, {"id": "pow", "label": "Prince of Wales"}]},
+                           {"id": "room", "kind": "select", "label": "Room", "required": True,
+                            "options": [{"id": "suite", "label": "Suite"}, {"id": "king", "label": "King"}]},
+                           {"id": "budget", "kind": "decimal", "label": "Budget", "required": False}]}
+        with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "c2", "HERMES_KANBAN_BOARD": "default", "HERMES_KANBAN_RUN_ID": "12"}):
+            result = json.loads(handler(form, session_id="w1"))
+        self.assertEqual(result["task_id"], "c2")
+        self.assertIn("kanban_block", result["next_step"])
+        [action] = plugin._DECISIONS.open_task_actions("default")
+        self.assertEqual((action["action_id"], action["kind"], action["explanation"]),
+                         (result["card_id"], "question", "Inn on the Twenty, 1 night."))
+        self.assertEqual([f["id"] for f in action["card"]["data"]["fields"]], ["hotel", "room", "budget"])
+        chat = json.loads(handler(form, session_id="s1"))
+        self.assertNotIn("next_step", chat, "in a chat the form stays a form")
+        self.assertEqual(plugin._DECISIONS.open(profile="friday"), [])
+
     def test_hook_never_raises(self):
         with patch.object(plugin.tasks, "tool_call_block", side_effect=RuntimeError("boom")):
             self.assertIsNone(plugin.on_pre_tool_call(tool_name="kanban_complete", args={}, session_id="x"))

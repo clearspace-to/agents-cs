@@ -180,13 +180,14 @@ class DecisionLog(FormStore):
         """Returns the card id to use: for a ``message`` card that repeats an open draft in the same
         scope (one Kanban task across its retries, or one session) it is the open card's id, so the
         person is asked once however often the bot re-shows the same words."""
-        if not cards.is_decision(card):
-            return card["id"]
-        data = card["data"]
-        count = len(data.get("options") or next((f.get("options") or [] for f in data.get("fields", []) if f.get("kind") == "select"), []))
         # Retries of one task retain their scope even when Hermes starts a new session.
         # Match the exact outbound payload, never fuzzy titles, recipients or wording.
         task = os.environ.get("HERMES_KANBAN_TASK", "")
+        # A worker's card is answered from its task, whatever its shape (``cards.wants_answer``).
+        if not (cards.wants_answer(card) if task else cards.is_decision(card)):
+            return card["id"]
+        data = card["data"]
+        count = len(data.get("options") or next((f.get("options") or [] for f in data.get("fields", []) if f.get("kind") == "select"), []))
         scope = ("task:" + resolve_board() + ":" + task if task else "session:" + session_id if session_id else "")
         payload = {k: v for k, v in data.items() if k != "description"}
         digest = hashlib.sha256(cards.canonical_json(payload).encode()).hexdigest()
@@ -354,8 +355,8 @@ class DecisionLog(FormStore):
         """Tie a recorded decision to the Kanban task whose worker made it. Idempotent: a card
         ``record`` deduplicated onto an open draft keeps that draft's binding, so a re-shown identical
         draft never becomes a second action."""
-        if not cards.is_decision(card):
-            raise StoreError("not_a_decision", "Only a decision card can be bound to a task")
+        if not cards.wants_answer(card):
+            raise StoreError("not_a_decision", "Only a card the person answers can be bound to a task")
         data = card.get("data") or {}
         explanation = data.get("description") if isinstance(data.get("description"), str) else None
         with closing(self._connect()) as connection, connection:
