@@ -1,5 +1,5 @@
-"""Form, decision and task routes for the Hermes Bots app (the ``cards`` module's router), mounted by
-``hermes serve`` under ``/api/plugins/hermes-bots/`` (``dashboard/plugin_api.py`` composes it) and protected
+"""Form, decision and task routes for the Agents CS app (the ``cards`` module's router), mounted by
+``hermes serve`` under ``/api/plugins/agents-cs/`` (``dashboard/plugin_api.py`` composes it) and protected
 by Hermes' own dashboard authentication.
 
 POST forms/{request_id}/submit   {"profile": "<bot>", "values": {...}} -> {state, code, message[, values]}

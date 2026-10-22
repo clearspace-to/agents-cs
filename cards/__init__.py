@@ -1,6 +1,6 @@
 # Portions adapted from bighelp-plugin (loopdy_plugin/tools.py), Copyright the Loopdy / bighelp
 # contributors, Apache License 2.0. See cards/NOTICE and ../LICENSE.
-"""Native cards for the Hermes Bots app: charts, metrics, tables, checklists, forms and more.
+"""Native cards for the Agents CS app: charts, metrics, tables, checklists, forms and more.
 
 Registers one ``hermes_card_<type>`` tool per card type, ``hermes_card_form_response`` to read a
 form's answer, ``hermes_task_wait`` (a worker parks for a third party), ``hermes_task_adjust`` (a coordinator
@@ -401,7 +401,7 @@ def _notify_in_background(board: Any, task_id: str | None, what: str, *, bot: An
             if opened is not None:
                 opened.close()
 
-    threading.Thread(target=work, name="hermes-bots-kanban-observer", daemon=True).start()
+    threading.Thread(target=work, name="agents-cs-kanban-observer", daemon=True).start()
 
 
 def on_transform_tool_result(**kwargs: Any) -> str | None:
@@ -571,16 +571,16 @@ def parameters(card_type: str) -> dict[str, Any]:
 
 def _description(card_type: str) -> str:
     if card_type == "message":
-        return ("Show an email or any other message you drafted for the person in the Hermes Bots app, so "
+        return ("Show an email or any other message you drafted for the person in the Agents CS app, so "
                 "they can Send it, edit it in place, type what to change in Other, or say don't send. ALWAYS call this before sending any "
                 "message that goes out under the person's name, and send nothing until their answer arrives; "
                 "only selected=[send] with no values.other authorizes sending; if authorized and edited, send their wording exactly. "
                 "If they typed in Other (values.other), treat comments and attached edits as notes, rewrite the draft and show it again. Title it as the question (\"Send this to "
-                "Morgan?\"). One message per card. Guidance: skill_view('hermes-bots:native-cards').")
-    return (f"Show {DESCRIPTIONS[card_type]} as a native card in the Hermes Bots app, instead of long text. "
+                "Morgan?\"). One message per card. Guidance: skill_view('agents-cs:native-cards').")
+    return (f"Show {DESCRIPTIONS[card_type]} as a native card in the Agents CS app, instead of long text. "
             "Use a card when structure reads better than prose; keep prose for everything else. The card "
             "appears below your reply; don't repeat its contents. Other channels get plain text. "
-            "Guidance: skill_view('hermes-bots:native-cards').")
+            "Guidance: skill_view('agents-cs:native-cards').")
 
 
 def register(ctx: Any) -> None:
@@ -638,4 +638,4 @@ def register(ctx: Any) -> None:
     skill = Path(__file__).parent / "skills" / "native-cards" / "SKILL.md"
     if skill.exists() and hasattr(ctx, "register_skill"):
         ctx.register_skill("native-cards", skill,
-                           description="When and how to answer with native cards in the Hermes Bots app.")
+                           description="When and how to answer with native cards in the Agents CS app.")

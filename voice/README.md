@@ -1,12 +1,12 @@
-# Hermes Bots live voice
+# Agents CS live voice
 
-Media-only module of the `hermes-bots` Hermes plugin (was the `hermes-bots-voice` plugin) (see NOTICE and LICENSE).
+Media-only module of the `agents-cs` Hermes plugin (was the `hermes-bots-voice` plugin) (see NOTICE and LICENSE).
 No new port, chat executor, agent tools or changes to Hermes core. The app submits
 voice delegations through the same chat connection used for typed messages.
 
 ## Install on the Hermes host
 
-The voice module ships inside the `hermes-bots` plugin (`plugin/hermes-bots`, see its README). The Hermes Bots
+The voice module ships inside the `agents-cs` plugin (`plugin/agents-cs`, see its README). The Agents CS
 connector installs the plugin into every Hermes home (`hermes plugins install`) and restarts the dashboard
 (`hermes serve`), which is the only process that imports these routes (and so `httpx`, `websockets`
 and `pydantic`); a bot worker never loads this module's code.
@@ -30,7 +30,7 @@ integration, not an availability guarantee established by public API documentati
 
 ## Contract
 
-POST `/api/plugins/hermes-bots/voice/{status,offer,poll,result,note,close,voices,voice_set}`
+POST `/api/plugins/agents-cs/voice/{status,offer,poll,result,note,close,voices,voice_set}`
 (was `/api/plugins/hermes-bots-voice/voice/…`; same subpaths and bodies).
 All bodies contain `agentId` and `sessionId` (the stored chat ID).
 

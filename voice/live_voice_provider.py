@@ -36,7 +36,7 @@ MAX_PROVIDER_EVENT_NAME_BYTES = 128
 VOICES = frozenset({"arbor", "breeze", "cove", "ember", "juniper", "maple", "sol", "spruce", "vale"})
 _CALL_ID = re.compile(r"(?:rtc_[A-Za-z0-9_-]{1,124}|[0-9a-fA-F]{8}(?:-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12})\Z")
 DEFAULT_INSTRUCTIONS = (
-    "You are Hermes Bots' conversational voice front end. You have no tools of your own; "
+    "You are Agents CS' conversational voice front end. You have no tools of your own; "
     "delegate every request that needs facts, current information or careful reasoning to the "
     "client Hermes agent. This includes calendar, reminders and health questions, and any request "
     "to do, check, find, make, fix, run, remember or schedule something. Delegate before answering "
@@ -336,7 +336,7 @@ class CodexLiveProvider:
             connector = NoRedirectConnect
         # A global debug setting must not turn handshake headers/frames into
         # durable logs. This private logger never propagates to host handlers.
-        wire_logger = logging.Logger("hermes_bots.live.redacted")
+        wire_logger = logging.Logger("agents_cs.live.redacted")
         wire_logger.disabled = True
         wire_logger.propagate = False
         return await connector(url, additional_headers=headers,
@@ -382,7 +382,7 @@ class CodexLiveProvider:
                 self._auth = None
                 self._state = "waiting_started"
                 self._start_deadline = time.monotonic() + self._open_timeout
-                self._reader = asyncio.create_task(self._read_events(), name="hermes-bots-live-events")
+                self._reader = asyncio.create_task(self._read_events(), name="agents-cs-live-events")
                 await self._after_attach()
                 if self._failure is not None:
                     raise self._failure
@@ -606,7 +606,7 @@ class CodexLiveProvider:
                     if self._state in {"closing", "closed"}:
                         return
                     if self._lease is None:
-                        self._lease = asyncio.create_task(self._expire(ttl), name="hermes-bots-live-lease")
+                        self._lease = asyncio.create_task(self._expire(ttl), name="agents-cs-live-lease")
                     self._ready.set()
                 else:
                     await self._emit(event)
@@ -692,7 +692,7 @@ class CodexLiveProvider:
             self._state = "closing"
             self._ready.set()
             self._reader_idle.set()
-            self._cleanup_task = asyncio.create_task(self._cleanup(), name="hermes-bots-live-close")
+            self._cleanup_task = asyncio.create_task(self._cleanup(), name="agents-cs-live-close")
         return self._cleanup_task
 
     async def _shutdown(self) -> None:

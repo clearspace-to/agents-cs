@@ -30,7 +30,7 @@ _lock = threading.Lock()
 _last_attention: dict[str, tuple[str, float]] = {}
 # Tests swap this for a recorder; production hands the event to the mobile module in-process.
 transport = None
-log = logging.getLogger("hermes_bots.mobile")
+log = logging.getLogger("agents_cs.mobile")
 
 
 def _deliver(kind: str, body: dict[str, Any]) -> None:
@@ -38,7 +38,7 @@ def _deliver(kind: str, body: dict[str, Any]) -> None:
         from ..mobile import events
         getattr(events, kind)(body)
     except Exception as error:  # noqa: BLE001 - an observer: never into Hermes
-        log.warning("hermes-bots mobile: %s event failed: %s", kind, type(error).__name__)
+        log.warning("agents-cs mobile: %s event failed: %s", kind, type(error).__name__)
 
 
 def post(kind: str, body: dict[str, Any], *, wait: bool = False) -> None:
@@ -49,7 +49,7 @@ def post(kind: str, body: dict[str, Any], *, wait: bool = False) -> None:
     if wait:
         _deliver(kind, body)
     else:
-        threading.Thread(target=_deliver, args=(kind, body), name="hermes-bots-notify", daemon=True).start()
+        threading.Thread(target=_deliver, args=(kind, body), name="agents-cs-notify", daemon=True).start()
 
 
 def task_event(event: str, *, board: str | None, task_id: str, title: str | None, bot: str | None,

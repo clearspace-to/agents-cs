@@ -163,14 +163,14 @@ class UsageTests(unittest.TestCase):
         from fastapi.testclient import TestClient
         routes = mobile("routes")
         app = FastAPI()
-        app.include_router(routes.router, prefix="/api/plugins/hermes-bots")
+        app.include_router(routes.router, prefix="/api/plugins/agents-cs")
         client = TestClient(app)
-        base = "/api/plugins/hermes-bots/mobile/usage"
+        base = "/api/plugins/agents-cs/mobile/usage"
         with patch.object(home, "root", return_value=self.home):
             self.assertEqual(client.get(base + "?period=invalid").status_code, 422)
             r = client.get(base + "?period=last7")
             self.assertEqual(r.status_code, 200)
             self.assertEqual(r.json()["period"], "last7")
-            self.assertEqual(client.get("/api/plugins/hermes-bots/usage").status_code, 404)  # no unprefixed duplicate
+            self.assertEqual(client.get("/api/plugins/agents-cs/usage").status_code, 404)  # no unprefixed duplicate
 
 if __name__=='__main__': unittest.main()

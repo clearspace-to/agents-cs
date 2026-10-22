@@ -51,7 +51,7 @@ def _provider_rejection(error: LiveProviderError) -> NativeAPIError:
     code = error.code if isinstance(error.code, str) and _FIXED_NAME.fullmatch(error.code) else "failed"
     stage = error.stage if isinstance(error.stage, str) and _FIXED_NAME.fullmatch(error.stage) else "unknown"
     status = error.http_status if type(error.http_status) is int else None
-    logger.warning("Hermes Bots native voice provider failed: code=%s stage=%s http_status=%s", code, stage, status)
+    logger.warning("Agents CS native voice provider failed: code=%s stage=%s http_status=%s", code, stage, status)
     return NativeAPIError(409, "voice_provider_" + code, "The live voice provider could not complete this call.")
 
 
@@ -316,7 +316,7 @@ class NativeVoiceHub:
             await call.provider.append_context(ACK_TEXT, quiet=False)
         except Exception as error:
             # A missed filler is cosmetic; never let it end the call.
-            logger.info("Hermes Bots native voice fallback acknowledgement skipped: %s", type(error).__name__)
+            logger.info("Agents CS native voice fallback acknowledgement skipped: %s", type(error).__name__)
 
     @staticmethod
     def _copy_event_types(value):

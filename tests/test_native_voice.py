@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugin_loader
-plugin_loader.load_root()  # the plugin as a package; its voice module is hermes_bots_dashboard.voice
+plugin_loader.load_root()  # the plugin as a package; its voice module is agents_cs_dashboard.voice
 """Native media ownership and at-most-once boundaries; no real provider calls."""
 import asyncio
 from dataclasses import replace
@@ -10,9 +10,9 @@ import json
 import time
 import unittest
 
-from hermes_bots_dashboard.voice.live_voice_provider import LiveProviderError
-from hermes_bots_dashboard.voice.context import NativeAPIError
-from hermes_bots_dashboard.voice.native_voice import ACK_TEXT, NativeVoiceHub
+from agents_cs_dashboard.voice.live_voice_provider import LiveProviderError
+from agents_cs_dashboard.voice.context import NativeAPIError
+from agents_cs_dashboard.voice.native_voice import ACK_TEXT, NativeVoiceHub
 
 SDP = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
 
@@ -378,7 +378,7 @@ class NativeVoiceProviderFailureTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_provider_refusal_reports_its_code_and_closes_the_call(self):
         self.failure = LiveProviderError("rate_limited", stage="create", allocation_state="rejected", http_status=429)
-        with self.assertLogs("hermes_bots_dashboard.voice.native_voice", level="WARNING") as logs:
+        with self.assertLogs("agents_cs_dashboard.voice.native_voice", level="WARNING") as logs:
             with self.assertRaises(NativeAPIError) as caught:
                 await self.hub.offer(self.owner, self.fields)
         self.assertEqual((caught.exception.status, caught.exception.code), (409, "voice_provider_rate_limited"))

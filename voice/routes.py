@@ -1,4 +1,4 @@
-"""The ``voice`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/hermes-bots/``.
+"""The ``voice`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/agents-cs/``.
 Mounted behind Hermes dashboard authentication; never expose as a standalone API.
 Verified account identities bind gated media ownership across token refreshes.
 Legacy loopback mode uses the dashboard-validated session-token digest.
@@ -47,7 +47,7 @@ def _owner(request: Request):
     # A service-token seam must not bypass that check.
     if (getattr(request.app.state, "auth_required", None) is not False
             or getattr(request.state, "token_authenticated", False)
-            or not request.url.path.startswith("/api/plugins/hermes-bots/voice/")):
+            or not request.url.path.startswith("/api/plugins/agents-cs/voice/")):
         return None
     token = request.headers.get("X-Hermes-Session-Token", "")
     authorization = request.headers.get("Authorization", "")

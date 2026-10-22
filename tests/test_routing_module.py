@@ -1,4 +1,4 @@
-"""Routing as a module of hermes-bots: off unless configured, the key as 'unavailable', homes from Hermes."""
+"""Routing as a module of agents-cs: off unless configured, the key as 'unavailable', homes from Hermes."""
 import importlib
 import json
 import os
@@ -30,12 +30,12 @@ class ConfiguredTests(unittest.TestCase):
             self.assertIsNone(settings.configured_mode({}))
             self.assertEqual(settings.mode({}), "off")
             self.assertFalse(settings.configured({}, home))
-            self.assertFalse(settings.configured(config(**{"hermes-bots": {"card_guard": "on"}}), home))
-            self.assertFalse(settings.configured(config(**{"hermes-bots": {"routing_mode": "bogus"}}), home))
+            self.assertFalse(settings.configured(config(**{"agents-cs": {"card_guard": "on"}}), home))
+            self.assertFalse(settings.configured(config(**{"agents-cs": {"routing_mode": "bogus"}}), home))
 
     def test_the_new_setting_the_old_setting_and_an_existing_store_each_configure_it(self):
         with tempfile.TemporaryDirectory() as home:
-            for given in (config(**{"hermes-bots": {"routing_mode": "shadow"}}), config(**{"hermes-bots": {"routing_mode": "off"}})):
+            for given in (config(**{"agents-cs": {"routing_mode": "shadow"}}), config(**{"agents-cs": {"routing_mode": "off"}})):
                 self.assertTrue(settings.configured(given, home), given)
             self.assertFalse(settings.configured(config(**{"jev-routing": {"mode": "on"}}), home), "the 1.x name is not read")
             (Path(home) / "jev-routing-v2.sqlite").write_text("")
@@ -43,12 +43,12 @@ class ConfiguredTests(unittest.TestCase):
 
     def test_an_unquoted_yaml_on_or_off_is_understood(self):
         import yaml
-        text = "plugins:\n  entries:\n    hermes-bots:\n      settings:\n        routing_mode: %s\n"
+        text = "plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: %s\n"
         self.assertEqual(settings.mode(yaml.safe_load(text % "on")), "on")
         self.assertEqual(settings.configured_mode(yaml.safe_load(text % "off")), "off")
 
-    def test_only_the_hermes_bots_setting_counts(self):
-        given = config(**{"hermes-bots": {"routing_mode": "shadow"}, "jev-routing": {"mode": "on"}})
+    def test_only_the_agents_cs_setting_counts(self):
+        given = config(**{"agents-cs": {"routing_mode": "shadow"}, "jev-routing": {"mode": "on"}})
         self.assertEqual(settings.mode(given), "shadow")
         self.assertEqual(settings.mode(config(**{"jev-routing": {"mode": "on"}})), "off")
 
@@ -59,9 +59,9 @@ class ConfiguredTests(unittest.TestCase):
                 self.addCleanup(engine.pool.shutdown)
                 return engine.controls("s")["mode"]
         self.assertEqual(controls({}), "off")
-        self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "on"}})), "on")
-        self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "shadow"}})), "shadow")
-        self.assertEqual(controls(config(**{"hermes-bots": {"routing_mode": "off"}})), "off")
+        self.assertEqual(controls(config(**{"agents-cs": {"routing_mode": "on"}})), "on")
+        self.assertEqual(controls(config(**{"agents-cs": {"routing_mode": "shadow"}})), "shadow")
+        self.assertEqual(controls(config(**{"agents-cs": {"routing_mode": "off"}})), "off")
 
 
 class RegisterTests(unittest.TestCase):
@@ -85,7 +85,7 @@ class RegisterTests(unittest.TestCase):
 
     def test_everything_registers_once_configured(self):
         ctx = Ctx()
-        with patch.object(paths, "config", return_value=config(**{"hermes-bots": {"routing_mode": "shadow"}})):
+        with patch.object(paths, "config", return_value=config(**{"agents-cs": {"routing_mode": "shadow"}})):
             root.register(ctx)
         self.assertEqual(root.STATUS["routing"], "ok")
         self.assertIn("jev_review", ctx.tools)
@@ -139,9 +139,9 @@ class KeyTests(unittest.TestCase):
     def test_routing_key_file_setting(self):
         other = Path(self.home.name) / "elsewhere.key"
         other.write_text("sk-other")
-        given = config(**{"hermes-bots": {"routing_key_file": str(other)}})
+        given = config(**{"agents-cs": {"routing_key_file": str(other)}})
         self.assertEqual(settings.key_file(given), other)
-        self.assertIsNone(settings.key_file(config(**{"hermes-bots": {"routing_key_file": str(other) + ".gone"}})))
+        self.assertIsNone(settings.key_file(config(**{"agents-cs": {"routing_key_file": str(other) + ".gone"}})))
 
 
 class HomeForTests(unittest.TestCase):
@@ -154,10 +154,10 @@ class HomeForTests(unittest.TestCase):
         self.addCleanup(env.stop)
 
     def install(self, home, setting=True):
-        (home / "plugins" / "hermes-bots" / "routing").mkdir(parents=True)
-        (home / "plugins" / "hermes-bots" / "routing" / "routing_v2.py").write_text("")
+        (home / "plugins" / "agents-cs" / "routing").mkdir(parents=True)
+        (home / "plugins" / "agents-cs" / "routing" / "routing_v2.py").write_text("")
         if setting:
-            (home / "config.yaml").write_text("plugins:\n  entries:\n    hermes-bots:\n      settings:\n        routing_mode: on\n")
+            (home / "config.yaml").write_text("plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: on\n")
 
     def test_the_root_and_a_profile_resolve_under_hermes_root(self):
         self.install(self.root)
@@ -201,11 +201,11 @@ class ConnectorAuthenticationTests(unittest.TestCase):
         from fastapi import FastAPI
         from fastapi.responses import JSONResponse
         from fastapi.testclient import TestClient
-        from hermes_bots_connector.hermes import HermesLink, Detection
+        from agents_cs_connector.hermes import HermesLink, Detection
         routes = importlib.import_module(root.__name__ + '.routing.routes')
         app = FastAPI()
         app.state.auth_required = False
-        app.include_router(routes.router, prefix='/api/plugins/hermes-bots')
+        app.include_router(routes.router, prefix='/api/plugins/agents-cs')
         # Hermes' outer mount validates either supported session-token header.
         @app.middleware('http')
         async def gate(request, call_next):
@@ -217,11 +217,11 @@ class ConnectorAuthenticationTests(unittest.TestCase):
             link = HermesLink()
             self.addCleanup(lambda: asyncio.run(link.close()))
             link.detection = Detection(mode='loopback', token='local-secret')
-            reply = client.get('/api/plugins/hermes-bots/routing/capabilities', headers=link.headers)
+            reply = client.get('/api/plugins/agents-cs/routing/capabilities', headers=link.headers)
             self.assertEqual(reply.status_code, 200, reply.text)
-            self.assertEqual(client.get('/api/plugins/hermes-bots/routing/capabilities').status_code, 401)
+            self.assertEqual(client.get('/api/plugins/agents-cs/routing/capabilities').status_code, 401)
             app.state.auth_required = True
-            self.assertEqual(client.get('/api/plugins/hermes-bots/routing/capabilities', headers=link.headers).status_code, 401)
+            self.assertEqual(client.get('/api/plugins/agents-cs/routing/capabilities', headers=link.headers).status_code, 401)
             app.state.auth_required = False
             app.state.api_token = True
-            self.assertEqual(client.get('/api/plugins/hermes-bots/routing/capabilities', headers=link.headers).status_code, 401)
+            self.assertEqual(client.get('/api/plugins/agents-cs/routing/capabilities', headers=link.headers).status_code, 401)

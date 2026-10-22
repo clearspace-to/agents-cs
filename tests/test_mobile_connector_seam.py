@@ -1,6 +1,6 @@
-"""The seam between the plugin and the Hermes Bots connector: the outbox the connector drains (``outbox.py``, imported by the
+"""The seam between the plugin and the Agents CS connector: the outbox the connector drains (``outbox.py``, imported by the
 connector on its own), the device list and signing key the plugin reads from the connector's home, and the pointer file
-``hermes-bots connect`` writes so the plugin finds that home."""
+``agents-cs connect`` writes so the plugin finds that home."""
 import importlib.util
 import json
 import logging
@@ -30,7 +30,7 @@ class SchemaTests(MobileCase):
         self.assertNotIn("devices", tables)
         self.assertNotIn("content_keys", tables)
 
-    def test_the_database_lives_in_the_roots_hermes_bots_folder_owner_only(self):
+    def test_the_database_lives_in_the_roots_agents_cs_folder_owner_only(self):
         self.assertEqual(home.delivery_path(), self.root / "hermes-bots" / "delivery.db")
         self.assertTrue(home.delivery_path().is_file())
         if os.name == "posix":
@@ -170,7 +170,7 @@ class ConnectorDiscoveryTests(MobileCase):
     def test_without_connector_json_there_are_no_devices_and_it_says_so_once(self):
         (self.root / "hermes-bots" / "connector.json").unlink()
         devices.forget()
-        with self.assertLogs("hermes_bots.mobile", level="WARNING") as logs:
+        with self.assertLogs("agents_cs.mobile", level="WARNING") as logs:
             self.assertEqual(devices.devices(), [])
             self.assertEqual(devices.devices(), [])
             self.assertIsNone(devices.sender_key())
@@ -181,7 +181,7 @@ class ConnectorDiscoveryTests(MobileCase):
     def test_devices_json_missing_or_damaged(self):
         (self.connector / "devices.json").unlink()
         devices.forget()
-        with self.assertLogs("hermes_bots.mobile", level="WARNING"):
+        with self.assertLogs("agents_cs.mobile", level="WARNING"):
             self.assertEqual(devices.devices(), [])
         for text in ("not json", "[]", '{"devices": "x"}', '{"devices": [1, {"id": 3}, {"id": "dev_a"}, {"recipient_public_key": "k"}]}'):
             (self.connector / "devices.json").write_text(text)
@@ -203,7 +203,7 @@ class ConnectorDiscoveryTests(MobileCase):
     def test_an_unreadable_sender_key_means_no_alerts(self):
         self.sender_path.write_text("not a key")
         devices.forget()
-        with self.assertLogs("hermes_bots.mobile", level="WARNING"):
+        with self.assertLogs("agents_cs.mobile", level="WARNING"):
             self.assertIsNone(devices.sender_key())
         self.assertEqual(alerts.recipients(), [])
 
@@ -211,7 +211,7 @@ class ConnectorDiscoveryTests(MobileCase):
         self.sender_path.unlink()
         (self.connector / "devices.json").unlink()
         devices.forget()
-        with self.assertLogs("hermes_bots.mobile", level="WARNING"):
+        with self.assertLogs("agents_cs.mobile", level="WARNING"):
             devices.devices()
             devices.sender_key()
         self.assertEqual(sorted(p.name for p in self.connector.iterdir()), [])

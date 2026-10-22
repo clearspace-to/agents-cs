@@ -1,4 +1,4 @@
-Hermes Bots live voice
+Agents CS live voice
 Copyright 2026 Clearspace
 
 Adapted from promptclickrun/bighelp-plugin, commit
@@ -8,7 +8,7 @@ and the verified-session / loopback grant pattern in native_context.py.
 Copyright the Loopdy / bighelp contributors.
 
 The provider transport and credential resolution are retained. The media hub is
-adapted to Hermes Bots dashboard routes. Gated requests use verified account
+adapted to Agents CS dashboard routes. Gated requests use verified account
 ownership; loopback grants use dashboard-validated session-token ownership.
 BigHelp's native-context/precondition wrapper is narrowed to these media routes.
 No agent execution occurs here.

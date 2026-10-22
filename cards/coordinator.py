@@ -173,7 +173,7 @@ def start(*, title: str, instruction: str, profile: str | None = None, keepalive
         except Exception:
             pass
         raise
-    threading.Thread(target=_hold, args=(rpc, socket, session_id, keepalive, on_end), name="hermes-bots-coordinator",
+    threading.Thread(target=_hold, args=(rpc, socket, session_id, keepalive, on_end), name="agents-cs-coordinator",
                      daemon=True).start()
     ids = [session_id] + ([stored] if stored and stored != session_id else [])
     return {"session_id": session_id, "stored_session_id": stored, "session_ids": ids}
@@ -200,4 +200,4 @@ def prompt(session_id: str, instruction: str) -> None:
     except Exception:
         socket.close()
         raise
-    threading.Thread(target=_hold, args=(rpc, socket, session_id, KEEPALIVE_SECONDS), name="hermes-bots-coordinator", daemon=True).start()
+    threading.Thread(target=_hold, args=(rpc, socket, session_id, KEEPALIVE_SECONDS), name="agents-cs-coordinator", daemon=True).start()

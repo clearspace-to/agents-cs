@@ -20,7 +20,7 @@ def home_for(agent):
  home=base if agent in ('friday','default') else base/'profiles'/agent
  # Only installed, configured profiles; never interpret an arbitrary filesystem target.
  if home.parent!=base/'profiles' and home!=base:raise RoutingError('agent_not_found',404)
- if not (home/'plugins/hermes-bots/routing/routing_v2.py').is_file():raise RoutingError('agent_not_found',404)
+ if not (home/'plugins/agents-cs/routing/routing_v2.py').is_file():raise RoutingError('agent_not_found',404)
  if not settings.configured(config(home),home):raise RoutingError('agent_not_found',404)
  return home.resolve()
 

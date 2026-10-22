@@ -1,8 +1,8 @@
 # Jev routing 2.4 — implemented app API
 
-Plugin source: `plugin/hermes-bots/routing` (the `routing` module of the `hermes-bots` plugin; was the `jev-routing` plugin in scripts/jev/plugin of clearspace-to/hermes-agents-mg, see SOURCE.md). No Hermes core edits.
+Plugin source: `plugin/agents-cs/routing` (the `routing` module of the `agents-cs` plugin; was the `jev-routing` plugin in scripts/jev/plugin of clearspace-to/hermes-agents-mg, see SOURCE.md). No Hermes core edits.
 
-**Prefix change (hermes-bots 2.0):** every route below is now served at `/api/plugins/hermes-bots/routing/<op>` (it was `/api/plugins/hermes-bots/routing/<op>`); subpaths and bodies are unchanged. Routing is off unless configured: `plugins.entries.hermes-bots.settings.routing_mode` (`off`|`shadow`|`on`), the old `plugins.entries.jev-routing.settings.mode`, or an existing `<home>/jev-routing-v2.sqlite`; a bot that isn't configured answers `404 agent_not_found`. `GET /capabilities` also carries `classifierAvailable` (false when the host has no OpenRouter key: routing keeps the chat's own model).
+**Prefix change (agents-cs 2.0):** every route below is now served at `/api/plugins/agents-cs/routing/<op>` (it was `/api/plugins/agents-cs/routing/<op>`); subpaths and bodies are unchanged. Routing is off unless configured: `plugins.entries.agents-cs.settings.routing_mode` (`off`|`shadow`|`on`), the old `plugins.entries.jev-routing.settings.mode`, or an existing `<home>/jev-routing-v2.sqlite`; a bot that isn't configured answers `404 agent_not_found`. `GET /capabilities` also carries `classifierAvailable` (false when the host has no OpenRouter key: routing keeps the chat's own model).
 
 ## 2.4: the plugin routes every turn itself (current contract)
 
@@ -38,7 +38,7 @@ Capabilities 2.4 adds `serverRouting:true`, `serverRoutingSurfaces`, `appPlanDep
 
 ## Transport and identity
 
-Use the SAME Hermes base URL and authenticated URLSession as the app already uses. Base path: `/api/plugins/hermes-bots/routing`. API responses use `Cache-Control: no-store`. Native authenticated sessions use existing Hermes sign-in/cookies; never add a second Jev login. Legacy loopback mode uses the existing `X-Hermes-Session-Token` issued by Hermes, only when that mode is enabled. Never put the OpenRouter key in the app. Unauthenticated or service-token-only callers receive 401.
+Use the SAME Hermes base URL and authenticated URLSession as the app already uses. Base path: `/api/plugins/agents-cs/routing`. API responses use `Cache-Control: no-store`. Native authenticated sessions use existing Hermes sign-in/cookies; never add a second Jev login. Legacy loopback mode uses the existing `X-Hermes-Session-Token` issued by Hermes, only when that mode is enabled. Never put the OpenRouter key in the app. Unauthenticated or service-token-only callers receive 401.
 
 `agentId` is `friday` (alias `default`) or actual profile name `jarvis`; later profiles must have v2 installed. `sessionId` on these REST calls is the canonical persisted session key/ID, NOT the short WebSocket runtime ID. Use the canonical ID returned by the app's existing session open/resume flow. Each REST request verifies that the canonical session belongs to that bot's database and, when owner-stamped, the authenticated `provider:user`. A plugin session is also bound to the authenticated account. Legacy ownerless sessions have the same dashboard-management boundary as existing Hermes; this is not a new multi-tenant permissions system.
 

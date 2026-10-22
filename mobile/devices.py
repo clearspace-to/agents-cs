@@ -1,4 +1,4 @@
-"""The devices alerts are addressed to, and the key that signs them: both come from the Hermes Bots connector.
+"""The devices alerts are addressed to, and the key that signs them: both come from the Agents CS connector.
 
 * ``<connector home>/devices.json``  ``{"updated": ..., "devices": [{"id", "name", "platform", "recipient_public_key"}]}``,
   rewritten by the connector on every ``devices`` frame from the hub (atomic replace). Read on every use (cheap: it is
@@ -19,7 +19,7 @@ from pathlib import Path
 
 from . import home
 
-log = logging.getLogger("hermes_bots.mobile")
+log = logging.getLogger("agents_cs.mobile")
 
 _lock = threading.Lock()
 _said: set[str] = set()
@@ -40,7 +40,7 @@ def _once(key: str, message: str) -> None:
         if key in _said:
             return
         _said.add(key)
-    log.warning("hermes-bots mobile: %s", message)
+    log.warning("agents-cs mobile: %s", message)
 
 
 def forget() -> None:

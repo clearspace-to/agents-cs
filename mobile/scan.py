@@ -1,7 +1,7 @@
 """The scan: new person-facing replies in the root home's and every profile's ``state.db`` become sealed outbox rows,
 one per device whose inbox filter lists the chat.
 
-Runs in the Hermes Bots connector (outside Hermes; ``home.use_root`` names the root home) every 2 s and at once on a
+Runs in the Agents CS connector (outside Hermes; ``home.use_root`` names the root home) every 2 s and at once on a
 nudge, just before it drains the outbox. The first look at a profile only records
 where it is (a cursor), so starting never floods old replies. A scheduled run's alert is first ``held``: the run's
 result rings once, from the main chat, so the run's own alert waits while Hermes hands the result over and is dropped
@@ -17,7 +17,7 @@ from contextlib import closing
 
 from . import alerts, outbox, replies, state
 
-log = logging.getLogger("hermes_bots.mobile")
+log = logging.getLogger("agents_cs.mobile")
 
 RECENT = 86400  # a held alert older than this is stale
 
@@ -118,7 +118,7 @@ def cycle(now=None) -> None:
                     scan(con, profile, path, now=now)
                 except sqlite3.Error as error:
                     replies.invalidate_index(profile)
-                    log.warning("hermes-bots mobile: scan %s failed: %s: %s", profile, type(error).__name__, error)
+                    log.warning("agents-cs mobile: scan %s failed: %s: %s", profile, type(error).__name__, error)
             con.commit()
             release_held(con, now=now)
     except Exception:

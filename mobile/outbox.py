@@ -1,5 +1,5 @@
 """The delivery database (``<root Hermes home>/hermes-bots/delivery.db``) and its outbox: the hand-off between the
-plugin's ``mobile`` module (which writes sealed alerts) and the Hermes Bots connector (which sends them to the hub).
+plugin's ``mobile`` module (which writes sealed alerts) and the Agents CS connector (which sends them to the hub).
 
 Standard library only and no relative imports: the connector (and the Claude Code host inside it) import this
 file on its own, so it must work without the rest of the plugin.

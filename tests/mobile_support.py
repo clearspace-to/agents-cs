@@ -2,7 +2,7 @@
 ``state.db`` the tests write), a throwaway connector home (``devices.json``, ``sender-key.pem``) and helpers to read
 the outbox and open the sealed alerts the way the phone would.
 
-No Hermes, no network, no APNs: the module's only output is rows in ``<root>/hermes-bots/delivery.db``.
+No Hermes, no network, no APNs: the module's only output is rows in ``<root>/agents-cs/delivery.db``.
 """
 import importlib
 import json
@@ -151,8 +151,8 @@ class MobileCase(unittest.TestCase):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         app = FastAPI()
-        app.include_router(routes.router, prefix="/api/plugins/hermes-bots")
+        app.include_router(routes.router, prefix="/api/plugins/agents-cs")
         return TestClient(app)
 
     def call(self, method, url, headers=HEADERS, **kw):
-        return self.client().request(method, "/api/plugins/hermes-bots/mobile" + url, headers=headers, **kw)
+        return self.client().request(method, "/api/plugins/agents-cs/mobile" + url, headers=headers, **kw)

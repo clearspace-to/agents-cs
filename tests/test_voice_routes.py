@@ -19,7 +19,7 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app = FastAPI()
         self.app.state.auth_required = False
-        self.app.include_router(api.router, prefix='/api/plugins/hermes-bots')
+        self.app.include_router(api.router, prefix='/api/plugins/agents-cs')
         @self.app.middleware('http')
         async def fixture_auth(request, call_next):
             if (request.headers.get('X-Hermes-Session-Token') not in {'fixture', 'owner', 'other'}
@@ -32,36 +32,36 @@ class RouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncTearDown(self):
         await self.client.aclose()
     async def test_missing_session_header_rejected(self):
-        response = await self.client.post('/api/plugins/hermes-bots/voice/status', json=self.fields)
+        response = await self.client.post('/api/plugins/agents-cs/voice/status', json=self.fields)
         self.assertEqual(response.status_code, 401)
         self.assertEqual(response.headers['cache-control'], 'no-store')
     async def test_status_does_not_allocate_or_resolve_credentials(self):
         before = len(api.native._HUB.calls)
-        response = await self.client.post('/api/plugins/hermes-bots/voice/status', json=self.fields, headers={'X-Hermes-Session-Token':'fixture'})
+        response = await self.client.post('/api/plugins/agents-cs/voice/status', json=self.fields, headers={'X-Hermes-Session-Token':'fixture'})
         self.assertTrue(response.json()['available'])
         self.assertEqual(len(api.native._HUB.calls), before)
     async def test_connector_local_session_reaches_voice(self):
-        from hermes_bots_connector.hermes import HermesLink, Detection
+        from agents_cs_connector.hermes import HermesLink, Detection
         link = HermesLink()
         link.detection = Detection(mode='loopback', token='fixture')
         try:
-            response = await self.client.post('/api/plugins/hermes-bots/voice/status',
+            response = await self.client.post('/api/plugins/agents-cs/voice/status',
                                              json=self.fields, headers=link.headers)
             self.assertEqual(response.status_code, 200, response.text)
         finally:
             await link.close()
     async def test_invalid_input_has_no_reflected_secret(self):
-        response = await self.client.post('/api/plugins/hermes-bots/voice/status', json={**self.fields, 'secret':'private-fixture'}, headers={'X-Hermes-Session-Token':'fixture'})
+        response = await self.client.post('/api/plugins/agents-cs/voice/status', json={**self.fields, 'secret':'private-fixture'}, headers={'X-Hermes-Session-Token':'fixture'})
         self.assertEqual(response.status_code, 422)
         self.assertNotIn('private-fixture', response.text)
     async def test_body_is_bounded(self):
-        response = await self.client.post('/api/plugins/hermes-bots/voice/offer', content=b'x'*200001, headers={'X-Hermes-Session-Token':'fixture'})
+        response = await self.client.post('/api/plugins/agents-cs/voice/offer', content=b'x'*200001, headers={'X-Hermes-Session-Token':'fixture'})
         self.assertEqual(response.status_code, 413)
     async def test_call_cannot_be_adopted_by_another_session(self):
         fields = {'agentId':'friday', 'sessionId':'saved', 'voiceId':'close-first-route-test'}
-        response = await self.client.post('/api/plugins/hermes-bots/voice/close', json=fields, headers={'X-Hermes-Session-Token':'owner'})
+        response = await self.client.post('/api/plugins/agents-cs/voice/close', json=fields, headers={'X-Hermes-Session-Token':'owner'})
         self.assertEqual(response.status_code, 200)
-        response = await self.client.post('/api/plugins/hermes-bots/voice/poll', json={**fields, 'after':0}, headers={'X-Hermes-Session-Token':'other'})
+        response = await self.client.post('/api/plugins/agents-cs/voice/poll', json={**fields, 'after':0}, headers={'X-Hermes-Session-Token':'other'})
         self.assertEqual(response.status_code, 409)
         self.assertEqual(response.json()['code'], 'voice_owner_changed')
 
@@ -79,7 +79,7 @@ class GatedRouteTests(unittest.IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         self.app = FastAPI()
         self.app.state.auth_required = True
-        self.app.include_router(api.router, prefix='/api/plugins/hermes-bots')
+        self.app.include_router(api.router, prefix='/api/plugins/agents-cs')
         self.session = FixtureSession()
         self.service_authenticated = False
         @self.app.middleware('http')
@@ -104,7 +104,7 @@ class GatedRouteTests(unittest.IsolatedAsyncioTestCase):
         await self.client.aclose()
 
     async def post(self, operation, **kwargs):
-        return await self.client.post('/api/plugins/hermes-bots/voice/' + operation, **kwargs)
+        return await self.client.post('/api/plugins/agents-cs/voice/' + operation, **kwargs)
 
     async def test_verified_cookie_session_needs_no_legacy_header_and_survives_refresh(self):
         response = await self.post('close', json=self.fields)
@@ -260,14 +260,14 @@ class VoiceChoiceRouteTests(unittest.IsolatedAsyncioTestCase):
         api._PREFERENCES = api.preferences.VoicePreferences(Path(self.directory.name) / 'voices.json')
         self.app = FastAPI()
         self.app.state.auth_required = False
-        self.app.include_router(api.router, prefix='/api/plugins/hermes-bots')
+        self.app.include_router(api.router, prefix='/api/plugins/agents-cs')
         self.client = httpx.AsyncClient(transport=httpx.ASGITransport(app=self.app), base_url='http://fixture')
     async def asyncTearDown(self):
         await self.client.aclose()
         api._PREFERENCES = self.saved
         self.directory.cleanup()
     async def post(self, operation, body, token='owner'):
-        return await self.client.post('/api/plugins/hermes-bots/voice/' + operation, json=body,
+        return await self.client.post('/api/plugins/agents-cs/voice/' + operation, json=body,
                                       headers={'X-Hermes-Session-Token': token})
     async def test_choice_is_shared_across_sign_ins(self):
         empty = await self.post('voices', {'agentId': 'friday'})
@@ -287,7 +287,7 @@ class VoiceChoiceRouteTests(unittest.IsolatedAsyncioTestCase):
                      {'agentId': 'friday', 'provider': 'codex_subscription', 'voice': 'ember', 'extra': 1}]:
             response = await self.post('voice_set', body)
             self.assertEqual(response.status_code, 422, body)
-        unauthenticated = await self.client.post('/api/plugins/hermes-bots/voice/voices', json={'agentId': 'friday'})
+        unauthenticated = await self.client.post('/api/plugins/agents-cs/voice/voices', json={'agentId': 'friday'})
         self.assertEqual(unauthenticated.status_code, 401)
     async def test_damaged_file_reads_as_no_choices(self):
         api._PREFERENCES.path.write_text('{"friday": {"api_key": 5, "codex_subscription": "ember"}, "BAD": {}}')

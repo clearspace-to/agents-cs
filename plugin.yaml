@@ -1,7 +1,7 @@
-name: hermes-bots
-version: 2.6.0
+name: agents-cs
+version: 3.0.0
 license: Apache-2.0
-description: "The Hermes Bots app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and optional Model Routing (routing). A module that fails to load is reported by /api/plugins/hermes-bots/info; the others keep working."
+description: "The Agents CS app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and optional Model Routing (routing). A module that fails to load is reported by /api/plugins/agents-cs/info; the others keep working."
 author: "Clearspace"
 requires_hermes: ">=0.21.5"
 python_dependencies:
@@ -9,7 +9,7 @@ python_dependencies:
   - "websockets>=15,<16"
   - "pydantic>=2,<3"
   - "cryptography>=43"
-# Files a gateway / bot process imports (hooks and what they call). `hermes-bots update` restarts the gateway only when
+# Files a gateway / bot process imports (hooks and what they call). `agents-cs update` restarts the gateway only when
 # one of these changed; a change to any other file (routes, voice) needs `hermes serve` restarted only.
 restart:
   gateway:

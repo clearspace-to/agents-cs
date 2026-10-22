@@ -1,5 +1,5 @@
-# Hermes Bots plugin: cards + voice + routing in one install. See README.md and NOTICE.
-"""Hermes Bots, the app's host side, as one Hermes plugin made of modules:
+# Agents CS plugin: cards + voice + routing in one install. See README.md and NOTICE.
+"""Agents CS, the app's host side, as one Hermes plugin made of modules:
 
 * ``cards``   native cards, forms, decisions, alerts, tasks, coordinator, creation, cron archive, guard, relay
 * ``mobile``  alerts and read state for the app (was the push bridge): the reply scan (run by the connector), the outbox it drains
@@ -8,7 +8,7 @@
 * ``routing`` Model Routing (was the ``jev-routing`` plugin); optional, off unless configured
 
 ``register(ctx)`` registers each module inside its own guard: a module that fails to import or register is
-logged and reported (``/api/plugins/hermes-bots/info``), and the others still load.
+logged and reported (``/api/plugins/agents-cs/info``), and the others still load.
 
 Loading is lazy and process-aware. This file imports only the standard library. A bot worker (gateway,
 CLI, Kanban worker) calls ``register`` and gets the cards hooks and tools, plus routing's hooks when the
@@ -21,8 +21,8 @@ import importlib
 import logging
 from typing import Any
 
-VERSION = "2.6.0"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
-NAME = "hermes-bots"
+VERSION = "3.0.0"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
+NAME = "agents-cs"
 MODULES = ("cards", "mobile", "voice", "routing")
 
 logger = logging.getLogger(__name__)
@@ -57,7 +57,7 @@ def _load(ctx: Any, name: str) -> str:
         module.register(ctx)
         return "ok"
     except Exception as exc:  # noqa: BLE001 - one module never takes the others down
-        logger.warning("hermes-bots: module %s failed to load: %s", name, exc, exc_info=True)
+        logger.warning("agents-cs: module %s failed to load: %s", name, exc, exc_info=True)
         return _error(exc)
 
 
@@ -66,6 +66,6 @@ def register(ctx: Any) -> None:
         STATUS[name] = _load(ctx, name)
     bad = {name: status for name, status in STATUS.items() if status.startswith("error")}
     if bad:
-        logger.warning("hermes-bots %s: %s", VERSION, bad)
+        logger.warning("agents-cs %s: %s", VERSION, bad)
     else:
-        logger.info("hermes-bots %s: %s", VERSION, STATUS)
+        logger.info("agents-cs %s: %s", VERSION, STATUS)

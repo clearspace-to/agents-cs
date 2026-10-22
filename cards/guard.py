@@ -11,7 +11,7 @@ profile, every app reply that carries no card goes through two steps:
    cards replace is removed only where it matches the reply exactly.
 
 Fail-open throughout: any error, timeout or invalid card leaves the reply as written. Settings
-(``plugins.entries.hermes-bots.settings`` in the profile's config.yaml)::
+(``plugins.entries.agents-cs.settings`` in the profile's config.yaml)::
 
     card_guard: "on"        # "on", "shadow" (decide and log only) or "off" (default)
     card_guard_key_file: /path/to/openrouter-key   # optional; defaults to routing's key (routing_key_file, else the Jev key)

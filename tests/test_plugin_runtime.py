@@ -1,4 +1,4 @@
-"""The hermes-bots plugin (plugin/hermes-bots) against a real Hermes checkout, through Hermes' own Plugin
+"""The agents-cs plugin (plugin/agents-cs) against a real Hermes checkout, through Hermes' own Plugin
 Doctor and plugin validator (what ``hermes plugins validate`` and a ``hermes plugins install`` run).
 
 Skipped when Hermes isn't importable (an ordinary dev run). A plugin-compatibility job puts a
@@ -13,8 +13,8 @@ import tempfile
 import unittest
 
 def _plugin_dir() -> Path:
-    """plugin/hermes-bots in this checkout; HERMES_BOTS_PLUGIN_DIR points at a staged copy (scripts/check-hermes-contract.sh)."""
-    configured = os.environ.get("HERMES_BOTS_PLUGIN_DIR")
+    """plugin/agents-cs in this checkout; AGENTS_CS_PLUGIN_DIR points at a staged copy (scripts/check-hermes-contract.sh)."""
+    configured = os.environ.get("AGENTS_CS_PLUGIN_DIR")
     return Path(configured) if configured else Path(__file__).resolve().parents[1]
 
 
@@ -47,7 +47,7 @@ class PluginRuntimeCompatibilityTests(unittest.TestCase):
         self.assertTrue(HERMES, "HERMES_COMPAT_REQUIRED=1 but hermes_cli does not import")
 
     def test_there_is_a_plugin_to_check(self):
-        self.assertTrue(PLUGINS, "No plugin/hermes-bots/plugin.yaml found (set HERMES_BOTS_PLUGIN_DIR)")
+        self.assertTrue(PLUGINS, "No plugin/agents-cs/plugin.yaml found (set AGENTS_CS_PLUGIN_DIR)")
 
     def test_plugin_doctor_loads_and_registers_every_plugin(self):
         """Hermes's own doctor runs under a throwaway home of its own, so routing (an optional module, off
@@ -75,14 +75,14 @@ print(json.dumps({"ok": report.ok, "report": report.format_text(),
         for plugin in PLUGINS:
             with self.subTest(plugin=plugin.name), tempfile.TemporaryDirectory(prefix="hermes-compat-") as home:
                 (Path(home) / "config.yaml").write_text(
-                    "plugins:\n  entries:\n    hermes-bots:\n      settings:\n        routing_mode: shadow\n")
+                    "plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: shadow\n")
                 result = subprocess.run([sys.executable, "-c", """
 import json, shutil, sys
 from pathlib import Path
 from hermes_cli.plugins import PluginManager
 home = Path(sys.argv[2])
 (home / "bundled-plugins").mkdir()
-shutil.copytree(sys.argv[1], home / "plugins" / "hermes-bots", ignore=shutil.ignore_patterns("__pycache__", "tests"))
+shutil.copytree(sys.argv[1], home / "plugins" / "agents-cs", ignore=shutil.ignore_patterns("__pycache__", "tests"))
 manager = PluginManager()
 (manifest,) = manager._scan_directory(home / "plugins", source="user")
 manager._load_plugin(manifest)

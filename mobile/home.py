@@ -10,7 +10,7 @@ from pathlib import Path
 
 try:
     from .. import paths
-except ImportError:  # the connector imports this folder on its own, as ``hermes_bots_shared``; it calls ``use_root``
+except ImportError:  # the connector imports this folder on its own, as ``agents_cs_shared``; it calls ``use_root``
     paths = None
 
 _root: Path | None = None
@@ -28,7 +28,7 @@ def root() -> Path:
 
 
 def state_dir() -> Path:
-    """``<root home>/hermes-bots``: the delivery database and the connector's pointer file live here."""
+    """``<root home>/agents-cs``: the delivery database and the connector's pointer file live here."""
     return root() / "hermes-bots"
 
 
@@ -44,7 +44,7 @@ def nudge_path() -> Path:
 
 def connector_info() -> dict:
     """``<root home>/hermes-bots/connector.json`` (``{"home": "<connector home>"}``, written by
-    ``hermes-bots connect``); ``{}`` when it is missing or unreadable."""
+    ``agents-cs connect``); ``{}`` when it is missing or unreadable."""
     try:
         data = json.loads((state_dir() / "connector.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):

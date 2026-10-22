@@ -64,11 +64,16 @@ def config() -> dict[str, Any]:
 
 
 def settings(config_data: dict[str, Any] | None = None) -> dict[str, Any]:
-    """This plugin's ``plugins.entries.hermes-bots.settings`` (the serving profile's config unless one is given)."""
+    """This plugin's ``plugins.entries.agents-cs.settings`` (the serving profile's config unless one is given), or
+    the ``hermes-bots`` entry the plugin had before 3.0 when there is no new one yet."""
     data = config() if config_data is None else config_data
-    entry = ((data.get("plugins") or {}).get("entries") or {}).get("hermes-bots")
-    found = entry.get("settings") if isinstance(entry, dict) else None
-    return dict(found) if isinstance(found, dict) else {}
+    entries = (data.get("plugins") or {}).get("entries") or {}
+    for name in ("agents-cs", "hermes-bots"):
+        entry = entries.get(name)
+        found = entry.get("settings") if isinstance(entry, dict) else None
+        if isinstance(found, dict):
+            return dict(found)
+    return {}
 
 
 def secrets_dirs() -> list[Path]:

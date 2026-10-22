@@ -150,10 +150,10 @@ PAYLOAD_LIMIT = 4096  # APNs' limit for a notification
 
 # What Apple sees on a sealed alert. The extension replaces it, and names the bot itself even when it
 # can't open one, so a failure shows "<Bot>: New message", never the reply.
-REPLY_PLACEHOLDER = {"title": "Hermes Bots", "body": "New message"}
-APPROVAL_PLACEHOLDER = {"title": "Approval needed", "body": "Open Hermes Bots to review the request."}
-QUESTION_PLACEHOLDER = {"title": "Question", "body": "Open Hermes Bots to answer."}
-TASK_PLACEHOLDER = {"title": "A task needs you", "body": "Open Hermes Bots to review it."}
+REPLY_PLACEHOLDER = {"title": "Agents CS", "body": "New message"}
+APPROVAL_PLACEHOLDER = {"title": "Approval needed", "body": "Open Agents CS to review the request."}
+QUESTION_PLACEHOLDER = {"title": "Question", "body": "Open Agents CS to answer."}
+TASK_PLACEHOLDER = {"title": "A task needs you", "body": "Open Agents CS to review it."}
 
 PREVIEW_LIMIT = 240
 _MARKS = re.compile(r"(\*\*|__|`+|^#+\s*|^>\s*)", re.MULTILINE)

@@ -1,4 +1,4 @@
-"""The ``routing`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/hermes-bots/``
+"""The ``routing`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/agents-cs/``
 (``/routing/<op>``). Authenticated Hermes plugin API: routing switches, routed-turn records and (deprecated) one-turn plans; never raw inference."""
 import hashlib
 import json
@@ -21,7 +21,7 @@ def identity(request):
   parts=[session.provider,session.org_id,session.user_id]
   if any(not isinstance(x,str) or len(x)>512 or any(ord(c)<32 for c in x) for x in parts) or not session.provider or not session.user_id:raise domain.RoutingError('sign_in_required',401)
   return hashlib.sha256(json.dumps(parts).encode()).hexdigest(),f'{session.provider}:{session.user_id}'
- if (getattr(request.app.state,'auth_required',None) is not False or getattr(request.state,'token_authenticated',False) or not request.url.path.startswith('/api/plugins/hermes-bots/routing/')):raise domain.RoutingError('sign_in_required',401)
+ if (getattr(request.app.state,'auth_required',None) is not False or getattr(request.state,'token_authenticated',False) or not request.url.path.startswith('/api/plugins/agents-cs/routing/')):raise domain.RoutingError('sign_in_required',401)
  token=request.headers.get('X-Hermes-Session-Token','')
  authorization=request.headers.get('Authorization','')
  if token and authorization:raise domain.RoutingError('sign_in_required',401)

@@ -40,8 +40,8 @@ class NativeFallbackTests(unittest.TestCase):
   self.e.pinned=lambda *a:True;self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[])
   self.e.pinned=lambda *a:False;self.prepare('explicit','Use high reasoning for this');self.assertIsNone(self.request('explicit'));self.assertEqual(self.calls,[])
  def test_shadow_cannot_apply_after_enable(self):
-  self.cfg['plugins']['entries']['hermes-bots']['settings']['routing_mode']='shadow';self.answer=reply('complex');self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[1])
-  self.cfg['plugins']['entries']['hermes-bots']['settings']['routing_mode']='on';self.assertIsNone(self.request())
+  self.cfg['plugins']['entries']['agents-cs']['settings']['routing_mode']='shadow';self.answer=reply('complex');self.prepare();self.assertIsNone(self.request());self.assertEqual(self.calls,[1])
+  self.cfg['plugins']['entries']['agents-cs']['settings']['routing_mode']='on';self.assertIsNone(self.request())
  def test_code_and_actions_not_low(self):
   for n,response in enumerate([reply('simple','code'),reply('simple','general','action')]):
    self.answer=response;self.prepare(str(n));self.assertEqual(self.request(str(n))['request']['reasoning']['effort'],'medium')
@@ -61,7 +61,7 @@ class NativeFallbackTests(unittest.TestCase):
    self.prepare('next');start=time.monotonic();self.assertIsNone(self.request('next'));self.assertLess(time.monotonic()-start,.1)
   finally:done.set()
  def test_session_pin_helper_readonly(self):
-  from hermes_bots_dashboard.routing.classifier_io import session_pinned
+  from agents_cs_dashboard.routing.classifier_io import session_pinned
   with sqlite3.connect(self.home/'state.db') as db:
    db.execute('create table sessions(id text,model_config text)');db.execute('insert into sessions values(?,?)',('manual','{"reasoning_config":{"effort":"low"}}'));db.execute('insert into sessions values(?,?)',('normal','{}'))
   self.assertTrue(session_pinned(self.home,'manual'));self.assertFalse(session_pinned(self.home,'normal'));self.assertTrue(session_pinned(self.home,'missing'))

@@ -19,7 +19,7 @@ from contextlib import closing
 
 from . import alerts, home, replies, state
 
-log = logging.getLogger("hermes_bots.mobile")
+log = logging.getLogger("agents_cs.mobile")
 
 TASK_TITLES = {"decision": "{bot} needs your decision", "review": "{bot} finished: review the work",
                "blocked": "{bot} needs your input", "stuck": "{bot} is stuck on a task"}
@@ -52,7 +52,7 @@ def approval(event: dict) -> None:
         return
     thread = profile + ":" + chat
     collapse = str(uuid.uuid5(uuid.NAMESPACE_URL, "approval:" + thread))
-    log.info("hermes-bots mobile: approval %s %s %s surface=%s", kind, profile, chat[:22], event.get("surface") or "-")
+    log.info("agents-cs mobile: approval %s %s %s surface=%s", kind, profile, chat[:22], event.get("surface") or "-")
     with _connect() as con, con:
         if kind == "requested":
             body = _text(event.get("description"), 600).strip() or "wants to run a command."
@@ -80,7 +80,7 @@ def question(event: dict) -> bool:
     thread = profile + ":" + chat
     collapse = str(uuid.uuid5(uuid.NAMESPACE_URL, "question:" + thread))
     source = replies.session_source(profile, chat)
-    log.info("hermes-bots mobile: question %s %s %s source=%s", kind, profile, chat[:22], source or "-")
+    log.info("agents-cs mobile: question %s %s %s source=%s", kind, profile, chat[:22], source or "-")
     if source in replies.MESSAGING_SOURCES:
         return False
     with _connect() as con, con:
@@ -110,7 +110,7 @@ def task(event: dict) -> None:
         return
     board, bot, kind_of = _text(event.get("board"), 64), _text(event.get("bot"), 64), _text(event.get("kind"), 20) or "blocked"
     collapse = str(uuid.uuid5(uuid.NAMESPACE_URL, "task:" + task_id))
-    log.info("hermes-bots mobile: task %s %s %s bot=%s", kind, kind_of, task_id, bot or "-")
+    log.info("agents-cs mobile: task %s %s %s bot=%s", kind, kind_of, task_id, bot or "-")
     with _connect() as con, con:
         if kind == "requested":
             who = replies.display_name(bot) if bot else "A bot"
@@ -161,7 +161,7 @@ def attention(event: dict) -> list[str]:
             alerts.push_all(con, {"content-available": 1},
                             {"hermes": {"taskResolved": {"task": task_id, "board": report["board"]}}},
                             push_type="background", priority=5)
-    log.info("hermes-bots mobile: attention %s count=%s tasks=%s decisions=%s resolved=%s", report["board"] or "default",
+    log.info("agents-cs mobile: attention %s count=%s tasks=%s decisions=%s resolved=%s", report["board"] or "default",
              report["count"], len(report["tasks"]), report["decisions"], len(resolved))
     return resolved
 

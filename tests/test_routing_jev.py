@@ -8,7 +8,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugin_loader
 plugin_loader.load_root()
-jev = importlib.import_module('hermes_bots_dashboard.routing.jev')
+jev = importlib.import_module('agents_cs_dashboard.routing.jev')
 
 class JevTests(unittest.TestCase):
     def api(self, label, confidence=1):

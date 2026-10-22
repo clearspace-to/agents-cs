@@ -1,11 +1,11 @@
 {
-  "name": "hermes-bots",
-  "label": "Hermes Bots",
-  "description": "Cards, forms, task routes, live voice and Model Routing for the Hermes Bots app. No dashboard tab.",
+  "name": "agents-cs",
+  "label": "Agents CS",
+  "description": "Cards, forms, task routes, live voice and Model Routing for the Agents CS app. No dashboard tab.",
   "icon": "LayoutGrid",
-  "version": "2.6.0",
+  "version": "3.0.0",
   "task_experience": 2,
-  "tab": {"path": "/hermes-bots", "position": "end", "hidden": true},
+  "tab": {"path": "/agents-cs", "position": "end", "hidden": true},
   "entry": "dist/index.js",
   "api": "plugin_api.py"
 }

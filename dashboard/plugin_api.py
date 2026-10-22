@@ -1,12 +1,12 @@
-"""The one dashboard router of the ``hermes-bots`` plugin, mounted by ``hermes serve`` under
-``/api/plugins/hermes-bots/`` behind Hermes's own dashboard authentication. It composes the modules' routers
+"""The one dashboard router of the ``agents-cs`` plugin, mounted by ``hermes serve`` under
+``/api/plugins/agents-cs/`` behind Hermes's own dashboard authentication. It composes the modules' routers
 and keeps every subpath of the plugins it replaced; only the prefix changed:
 
-    /api/plugins/hermes-bots-cards/<x>        ->  /api/plugins/hermes-bots/<x>          (cards)
-    (new in 2.0)                              ->  /api/plugins/hermes-bots/mobile/<op>  (mobile: reads, replies, usage, kinds, view)
-    /api/plugins/hermes-bots-voice/voice/<op> ->  /api/plugins/hermes-bots/voice/<op>   (voice)
-    /api/plugins/jev-routing/routing/<op>     ->  /api/plugins/hermes-bots/routing/<op> (routing, if configured)
-    GET /api/plugins/hermes-bots/info                                                   (name, version, modules)
+    /api/plugins/hermes-bots-cards/<x>        ->  /api/plugins/agents-cs/<x>          (cards)
+    (new in 2.0)                              ->  /api/plugins/agents-cs/mobile/<op>  (mobile: reads, replies, usage, kinds, view)
+    /api/plugins/hermes-bots-voice/voice/<op> ->  /api/plugins/agents-cs/voice/<op>   (voice)
+    /api/plugins/jev-routing/routing/<op>     ->  /api/plugins/agents-cs/routing/<op> (routing, if configured)
+    GET /api/plugins/agents-cs/info                                                   (name, version, modules)
 
 Each module's router is imported inside its own guard: one that fails is left out and reported by ``/info``,
 the rest are served. ``hermes serve`` is the only process that imports this file, so voice's ``httpx``,
@@ -23,8 +23,8 @@ from pathlib import Path
 from fastapi import APIRouter
 
 _ROOT = Path(__file__).resolve().parent.parent
-_PACKAGE = "hermes_bots_dashboard"
-_log = logging.getLogger("hermes_bots.dashboard")
+_PACKAGE = "agents_cs_dashboard"
+_log = logging.getLogger("agents_cs.dashboard")
 
 
 def _root_package():
@@ -56,7 +56,7 @@ def _mount(name: str) -> None:
         router.include_router(module.router)
         MODULES[name] = "ok"
     except Exception as exc:  # noqa: BLE001 - a module that can't load is reported, not fatal
-        _log.warning("hermes-bots: %s routes not mounted: %s", name, exc, exc_info=True)
+        _log.warning("agents-cs: %s routes not mounted: %s", name, exc, exc_info=True)
         MODULES[name] = _root._error(exc)
 
 

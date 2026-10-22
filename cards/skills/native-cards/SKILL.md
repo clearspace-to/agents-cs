@@ -1,11 +1,11 @@
 ---
 name: native-cards
-description: Answer with native cards (charts, metrics, tables, lists, timelines, checklists, forms, choices) in the Hermes Bots app when structure reads better than prose.
+description: Answer with native cards (charts, metrics, tables, lists, timelines, checklists, forms, choices) in the Agents CS app when structure reads better than prose.
 ---
 
-# Native cards in Hermes Bots
+# Native cards in Agents CS
 
-The person reads your replies in Hermes Bots, a Messages-style app on iPhone, iPad and Mac. The
+The person reads your replies in Agents CS, a Messages-style app on iPhone, iPad and Mac. The
 `hermes_card_*` tools draw a native card below your reply instead of a wall of text or a Markdown
 table. Channels that can't draw cards (Telegram, Slack, scheduled-job deliveries) get the card's
 plain-text version automatically, so a card never breaks a reply.

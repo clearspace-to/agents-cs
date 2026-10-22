@@ -12,8 +12,8 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugin_loader
-plugin_loader.load_root()  # the plugin as a package; its voice module is hermes_bots_dashboard.voice
-from hermes_bots_dashboard.voice.live_voice_auth import (
+plugin_loader.load_root()  # the plugin as a package; its voice module is agents_cs_dashboard.voice
+from agents_cs_dashboard.voice.live_voice_auth import (
     CODEX_BASE_URL, CodexLiveAuth, LiveAuthError, validate_codex_runtime,
 )
 

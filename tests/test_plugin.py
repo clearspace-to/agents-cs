@@ -48,12 +48,12 @@ class Ctx:
 class ManifestTests(unittest.TestCase):
     def test_identity_and_version(self):
         data = manifest()
-        self.assertEqual((data["name"], data["license"]), ("hermes-bots", "Apache-2.0"))
+        self.assertEqual((data["name"], data["license"]), ("agents-cs", "Apache-2.0"))
         self.assertRegex(data["version"], r"^\d+\.\d+\.\d+$")
         self.assertEqual(root.VERSION, data["version"])
         self.assertEqual(root.NAME, data["name"])
         dashboard = json.loads((ROOT / "dashboard" / "manifest.json").read_text())
-        self.assertEqual((dashboard["name"], dashboard["api"], dashboard["version"]), ("hermes-bots", "plugin_api.py", data["version"]))
+        self.assertEqual((dashboard["name"], dashboard["api"], dashboard["version"]), ("agents-cs", "plugin_api.py", data["version"]))
         self.assertTrue((ROOT / "dashboard" / dashboard["entry"]).is_file())
 
     def test_pyproject_lists_the_same_runtime_dependencies_and_not_fastapi(self):
@@ -65,7 +65,7 @@ class ManifestTests(unittest.TestCase):
         project = tomllib.loads((ROOT / "pyproject.toml").read_text())["project"]
         self.assertEqual(sorted(project["dependencies"]), sorted(manifest()["python_dependencies"]))
         self.assertNotIn("fastapi", " ".join(project["dependencies"]), "fastapi is Hermes's own")
-        self.assertEqual(project["name"], "hermes-bots-plugin")
+        self.assertEqual(project["name"], "agents-cs-plugin")
 
     def test_restart_gateway_names_real_files_including_every_hook_file(self):
         listed = manifest()["restart"]["gateway"]
@@ -165,17 +165,17 @@ class InfoAndRoutesTests(unittest.TestCase):
         from fastapi import FastAPI
         from fastapi.testclient import TestClient
         app = FastAPI()
-        app.include_router(api.router, prefix="/api/plugins/hermes-bots")
+        app.include_router(api.router, prefix="/api/plugins/agents-cs")
         return TestClient(app)
 
     def paths(self, api):
         """The served subpaths (OpenAPI spelling: ``{operation}`` for ``{operation:path}``)."""
-        prefix = "/api/plugins/hermes-bots"
+        prefix = "/api/plugins/agents-cs"
         return {path[len(prefix):] for path in self.client(api).app.openapi()["paths"]}
 
     def test_info(self):
-        info = self.client(plugin_api("info")).get("/api/plugins/hermes-bots/info").json()
-        self.assertEqual((info["name"], info["version"]), ("hermes-bots", root.VERSION))
+        info = self.client(plugin_api("info")).get("/api/plugins/agents-cs/info").json()
+        self.assertEqual((info["name"], info["version"]), ("agents-cs", root.VERSION))
         self.assertEqual(info["modules"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "off"})
         self.assertIn("hermes_version", info)
 
@@ -196,10 +196,10 @@ class InfoAndRoutesTests(unittest.TestCase):
         self.assertFalse([p for p in paths if p.startswith("/internal")])
 
     def test_routing_routes_and_status_appear_once_configured(self):
-        (Path(self.home.name) / "config.yaml").write_text("plugins:\n  entries:\n    hermes-bots:\n      settings:\n        routing_mode: shadow\n")
+        (Path(self.home.name) / "config.yaml").write_text("plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: shadow\n")
         api = plugin_api("routing")
         self.assertIn("/routing/{operation}", self.paths(api))
-        self.assertEqual(self.client(api).get("/api/plugins/hermes-bots/info").json()["modules"]["routing"], "ok")
+        self.assertEqual(self.client(api).get("/api/plugins/agents-cs/info").json()["modules"]["routing"], "ok")
 
     def test_a_module_whose_routes_fail_is_reported_and_the_others_are_served(self):
         real = importlib.import_module
@@ -211,7 +211,7 @@ class InfoAndRoutesTests(unittest.TestCase):
 
         api = plugin_api("broken", patched_import=fake)
         client = self.client(api)
-        modules = client.get("/api/plugins/hermes-bots/info").json()["modules"]
+        modules = client.get("/api/plugins/agents-cs/info").json()["modules"]
         self.assertEqual(modules["voice"], "error: ImportError: voice needs httpx")
         self.assertEqual(modules["cards"], "ok")
         self.assertNotIn("/voice/{operation}", self.paths(api))
@@ -220,7 +220,7 @@ class InfoAndRoutesTests(unittest.TestCase):
     def test_voice_identity_checks_the_new_prefix(self):
         voice = importlib.import_module(root.__name__ + ".voice.routes")
         source = (ROOT / "voice" / "routes.py").read_text()
-        self.assertIn('"/api/plugins/hermes-bots/voice/"', source)
+        self.assertIn('"/api/plugins/agents-cs/voice/"', source)
         self.assertNotIn("hermes-bots-voice/", source)
         self.assertTrue(hasattr(voice, "router"))
 
@@ -235,13 +235,13 @@ for name in ("hermes_constants", "hermes_cli.config", "agent.turn_finalizer", "t
         __import__(name)
     except Exception:
         pass
-spec = importlib.util.spec_from_file_location("hermes_bots", os.path.join(root_dir, "__init__.py"),
+spec = importlib.util.spec_from_file_location("agents_cs", os.path.join(root_dir, "__init__.py"),
                                               submodule_search_locations=[root_dir])
-module = importlib.util.module_from_spec(spec); sys.modules["hermes_bots"] = module; spec.loader.exec_module(module)
+module = importlib.util.module_from_spec(spec); sys.modules["agents_cs"] = module; spec.loader.exec_module(module)
 if os.environ.get("PROBE_ROUTING") == "1":
     import types
     config = types.ModuleType("hermes_cli.config")
-    config.load_config_readonly = lambda: {"plugins": {"entries": {"hermes-bots": {"settings": {"routing_mode": "on"}}}}}
+    config.load_config_readonly = lambda: {"plugins": {"entries": {"agents-cs": {"settings": {"routing_mode": "on"}}}}}
     sys.modules["hermes_cli"] = types.ModuleType("hermes_cli"); sys.modules["hermes_cli.config"] = config
 class Ctx:
     profile_name = "friday"
@@ -253,8 +253,8 @@ heavy = ["httpx", "websockets", "pydantic", "fastapi", "starlette", "yaml"]
 before = {m for m in heavy if m in sys.modules}
 module.register(Ctx())
 print(json.dumps({"status": module.STATUS, "loaded": sorted(m for m in heavy if m in sys.modules and m not in before),
-                  "voice": [m for m in sys.modules if m.startswith("hermes_bots.voice.")],
-                  "mobile": sorted(m for m in sys.modules if m.startswith("hermes_bots.mobile."))}))
+                  "voice": [m for m in sys.modules if m.startswith("agents_cs.voice.")],
+                  "mobile": sorted(m for m in sys.modules if m.startswith("agents_cs.mobile."))}))
 """
 
 

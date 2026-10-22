@@ -1,6 +1,6 @@
-"""Tests for the Hermes Bots cards plugin. Run from this folder's parent:
+"""Tests for the Agents CS cards plugin. Run from this folder's parent:
 
-    python3 -m unittest discover -s plugin/hermes-bots/tests
+    python3 -m unittest discover -s plugin/agents-cs/tests
 
 The dashboard route test needs FastAPI (Hermes' own venv has it) and is skipped without it.
 """
@@ -508,17 +508,17 @@ class DashboardRouteTests(unittest.TestCase):
                 card = cards.render("form", EXAMPLES["form"])
                 api._store.create(card, profile="friday", session_id="s1")
                 app = FastAPI()
-                app.include_router(api.router, prefix="/api/plugins/hermes-bots")
+                app.include_router(api.router, prefix="/api/plugins/agents-cs")
                 client = TestClient(app)
-                self.assertEqual(client.get("/api/plugins/hermes-bots/ssh/host-key").status_code, 404)
-                base = f"/api/plugins/hermes-bots/forms/{card['id']}"
+                self.assertEqual(client.get("/api/plugins/agents-cs/ssh/host-key").status_code, 404)
+                base = f"/api/plugins/agents-cs/forms/{card['id']}"
                 self.assertEqual(client.get(base, params={"profile": "friday"}).json()["state"], "pending")
                 bad = client.post(base + "/submit", json={"profile": "friday", "values": {}}).json()
                 self.assertEqual(bad["code"], "invalid_value")
                 good = client.post(base + "/submit", json={"profile": "friday", "values": {"city": "Lisbon"}}).json()
                 self.assertEqual(good["state"], "accepted")
                 self.assertEqual(client.get(base).json()["values"], {"city": "Lisbon"})
-                self.assertEqual(client.get("/api/plugins/hermes-bots/forms/xyz").status_code, 404)
+                self.assertEqual(client.get("/api/plugins/agents-cs/forms/xyz").status_code, 404)
 
     def test_kanban_specify_binds_the_secret_scope(self):
         try:
@@ -555,14 +555,14 @@ class DashboardRouteTests(unittest.TestCase):
         with patch.dict(sys.modules, fakes):
             api = plugin_loader.load_fresh("cards.routes", "api_specify")
             app = FastAPI()
-            app.include_router(api.router, prefix="/api/plugins/hermes-bots")
+            app.include_router(api.router, prefix="/api/plugins/agents-cs")
             client = TestClient(app)
-            answer = client.post("/api/plugins/hermes-bots/kanban/specify/t_abc", json={"author": "mark"}).json()
+            answer = client.post("/api/plugins/agents-cs/kanban/specify/t_abc", json={"author": "mark"}).json()
             self.assertEqual(answer, {"ok": True, "task_id": "t_abc", "reason": "", "new_title": "Get chair quotes"})
             self.assertEqual(bound[-1], "reset")
-            self.assertEqual(client.post("/api/plugins/hermes-bots/kanban/specify/..%2Fx", json={}).status_code, 404)
+            self.assertEqual(client.post("/api/plugins/agents-cs/kanban/specify/..%2Fx", json={}).status_code, 404)
             bound.clear()
-            split = client.post("/api/plugins/hermes-bots/kanban/decompose/t_abc", json={"author": "mark"}).json()
+            split = client.post("/api/plugins/agents-cs/kanban/decompose/t_abc", json={"author": "mark"}).json()
             self.assertEqual(split, {"ok": True, "task_id": "t_abc", "reason": "", "fanout": True, "child_ids": ["c1", "c2"], "new_title": None})
             self.assertEqual(bound[-1], "reset")
 

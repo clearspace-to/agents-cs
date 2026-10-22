@@ -1,5 +1,5 @@
 """The mobile module's replies, unread state, badges, inbox filters and routes (what the push bridge's tests covered, now
-against ``/api/plugins/hermes-bots/mobile/*`` and the outbox instead of APNs)."""
+against ``/api/plugins/agents-cs/mobile/*`` and the outbox instead of APNs)."""
 import json
 import sqlite3
 import sys
@@ -529,7 +529,7 @@ class ReadStateTests(MobileCase):
     def test_the_bridges_routes_are_gone(self):
         for method, path in (("PUT", "/devices"), ("GET", "/health"), ("POST", "/internal/nudge")):
             self.assertEqual(self.call(method, path, json={}).status_code, 404, path)
-        self.assertEqual(self.client().get("/api/plugins/hermes-bots/health").status_code, 404)
+        self.assertEqual(self.client().get("/api/plugins/agents-cs/health").status_code, 404)
 
 
 class KindsTests(MobileCase):

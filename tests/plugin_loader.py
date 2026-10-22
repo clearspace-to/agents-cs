@@ -1,6 +1,6 @@
 """Load the plugin the way Hermes does: a package from its folder, relative imports intact.
 
-Every test module shares one copy, registered as ``hermes_bots_dashboard``: the name ``dashboard/plugin_api.py``
+Every test module shares one copy, registered as ``agents_cs_dashboard``: the name ``dashboard/plugin_api.py``
 looks for first, so the router tests and the module tests see the same modules.
 """
 import importlib
@@ -8,8 +8,8 @@ import importlib.util
 import sys
 from pathlib import Path
 
-ROOT = Path(__file__).resolve().parent.parent  # plugin/hermes-bots
-PACKAGE = "hermes_bots_dashboard"
+ROOT = Path(__file__).resolve().parent.parent  # plugin/agents-cs
+PACKAGE = "agents_cs_dashboard"
 
 
 def load_root():

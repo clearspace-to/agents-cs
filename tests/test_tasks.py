@@ -1,7 +1,7 @@
 """Tests for the task experience (tasks.py, the task half of store.py, the pre_tool_call guard). Run
 from the repo root:
 
-    python3 -m unittest discover -s plugin/hermes-bots/tests
+    python3 -m unittest discover -s plugin/agents-cs/tests
 
 Hermes is never imported: ``FakeBoard`` stands in for ``tasks.HermesBoard`` with the same methods over
 dicts in memory. The route test needs FastAPI and is skipped without it.
@@ -851,9 +851,9 @@ class RouterTests(unittest.TestCase):
                     raise tasks.BoardError(404, "board 'missing' does not exist")
                 return board
             app = FastAPI()
-            app.include_router(tasks.make_router(log, factory), prefix="/api/plugins/hermes-bots")
+            app.include_router(tasks.make_router(log, factory), prefix="/api/plugins/agents-cs")
             client = TestClient(app)
-            base = "/api/plugins/hermes-bots"
+            base = "/api/plugins/agents-cs"
             shown = client.get(base + "/tasks/board", params={"board": "default"})
             self.assertEqual(shown.status_code, 200)
             self.assertEqual((shown.json()["capability"], len(shown.json()["actions"])), (tasks.CAPABILITY, 1))

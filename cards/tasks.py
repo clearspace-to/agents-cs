@@ -1,6 +1,6 @@
-"""The task experience for the Hermes Bots app (docs/TASK_EXPERIENCE_API.md, v2).
+"""The task experience for the Agents CS app (docs/TASK_EXPERIENCE_API.md, v2).
 
-Four dashboard routes, mounted by ``cards/routes.py`` under ``/api/plugins/hermes-bots/``:
+Four dashboard routes, mounted by ``cards/routes.py`` under ``/api/plugins/agents-cs/``:
 
 GET  tasks/board?board=&include_archived=     the board with containment, attention, allowed moves and open actions
 POST tasks/quick-add?board=                   one call: create the task, write it up or plan it, start it
@@ -1071,7 +1071,7 @@ def quick_add(board: Any, decisions: DecisionLog, body: dict[str, Any], *, speci
 
 
 def _spawn(work: Callable[[], None]) -> None:
-    threading.Thread(target=work, name="hermes-bots-quick-add", daemon=True).start()
+    threading.Thread(target=work, name="agents-cs-quick-add", daemon=True).start()
 
 
 def _background_enabled() -> bool:
@@ -1232,7 +1232,7 @@ def _comment_on_task(board: Any, decisions: DecisionLog, task_id: str, body: dic
             return 200, _coordinate(board, decisions, task, text, comment_id, session_ids, children_of, tasks_by_id)
         route = "leaf"
         if step == "promote" or step == "reopen_done":
-            ok, why = board.promote(task_id, author, "comment from the Hermes Bots app")
+            ok, why = board.promote(task_id, author, "comment from the Agents CS app")
             follow_up, detail = ("ready" if step == "promote" else "reopened", None) if ok else ("failed", why)
         elif step in ("unblock", "release_triage"):
             ok = board.unblock(task_id) if step == "unblock" else board.release_triage(task_id, author)

@@ -1,6 +1,6 @@
 # Portions adapted from bighelp-plugin (loopdy_plugin/generative_ui.py), Copyright the Loopdy /
 # bighelp contributors, Apache License 2.0. See cards/NOTICE and ../LICENSE.
-"""Hermes Bots native cards: the ``hermes.card`` v1 schema, strict validation and delivery.
+"""Agents CS native cards: the ``hermes.card`` v1 schema, strict validation and delivery.
 
 A card is data, never code: a fixed type, bounded text and numbers, no URLs, HTML, styles or
 actions. The bot calls a ``hermes_card_*`` tool; the plugin validates and canonicalises the
@@ -178,7 +178,7 @@ def delivery(card: dict[str, Any], *, attached: bool) -> dict[str, Any]:
     result: dict[str, Any] = {"card_id": card["id"], "type": card["type"]}
     if attached:
         result["instruction"] = (
-            "The card is added below your reply in the Hermes Bots app automatically. Do not copy "
+            "The card is added below your reply in the Agents CS app automatically. Do not copy "
             "the card or repeat its contents. " + WHOLE_ANSWER
         )
     else:
@@ -330,7 +330,7 @@ def fallback_text(card: dict[str, Any]) -> str:
         if "description" in data:
             lines.append(data["description"])
         lines += [f"- {field['label']}" for field in data["fields"]]
-        lines.append("(A form: answer it in the Hermes Bots app.)")
+        lines.append("(A form: answer it in the Agents CS app.)")
     elif kind == "selection":
         if "description" in data:
             lines.append(data["description"])
@@ -341,7 +341,7 @@ def fallback_text(card: dict[str, Any]) -> str:
             lines.append("Cc: " + ", ".join(data["cc"]))
         if "subject" in data:
             lines.append("Subject: " + data["subject"])
-        lines += ["", data["body"], "", "(A draft: approve it in the Hermes Bots app. Nothing is sent until then.)"]
+        lines += ["", data["body"], "", "(A draft: approve it in the Agents CS app. Nothing is sent until then.)"]
     text = "\n".join(lines).strip()
     return text if len(text) <= FALLBACK_LIMIT else text[:FALLBACK_LIMIT - 1].rstrip() + "…"
 

@@ -1,4 +1,4 @@
-# Jev routing 2.4 (the `routing` module of hermes-bots)
+# Jev routing 2.4 (the `routing` module of agents-cs)
 
 The plugin routes each turn itself (2.4): with Auto model and/or Auto effort on, its
 `llm_request` middleware sends that turn to the chosen slot model/effort inside the

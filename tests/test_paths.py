@@ -78,7 +78,7 @@ class HomeResolutionTests(unittest.TestCase):
 
 class SettingsAndSecretsTests(unittest.TestCase):
     CONFIG = {"plugins": {"entries": {
-        "hermes-bots": {"settings": {"card_guard": "on", "card_guard_key_file": "/keys/jev"}},
+        "agents-cs": {"settings": {"card_guard": "on", "card_guard_key_file": "/keys/jev"}},
         "hermes-bots-cards": {"settings": {"card_guard": "shadow", "card_guard_key_file": "/legacy"}}}}}
 
     def test_settings_come_only_from_this_plugins_entry(self):

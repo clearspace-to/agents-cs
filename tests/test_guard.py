@@ -1,6 +1,6 @@
 """Tests for the card guard. Run from the repo root:
 
-    python3 -m unittest discover -s plugin/hermes-bots/tests
+    python3 -m unittest discover -s plugin/agents-cs/tests
 """
 import importlib
 import json

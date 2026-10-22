@@ -19,7 +19,7 @@ def reply(complexity='simple',kind='general',need='none'):
 class V2Tests(unittest.TestCase):
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();self.addCleanup(self.tmp.cleanup);self.home=Path(self.tmp.name);self.calls=[]
-  self.cfg={'model':{'default':'gpt-6.1-sol','provider':'openai-codex'},'agent':{'reasoning_effort':'low'},'plugins':{'entries':{'hermes-bots':{'settings':{'routing_mode':'on'}}}}}
+  self.cfg={'model':{'default':'gpt-6.1-sol','provider':'openai-codex'},'agent':{'reasoning_effort':'low'},'plugins':{'entries':{'agents-cs':{'settings':{'routing_mode':'on'}}}}}
   self.answer=reply()
   def api(*args):self.calls.append(1);return self.answer
   self.e=r.Engine(self.home,lambda:self.cfg,lambda:IDS,api);self.addCleanup(self.e.pool.shutdown)

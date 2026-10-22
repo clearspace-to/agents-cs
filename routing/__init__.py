@@ -1,4 +1,4 @@
-"""Model Routing (the retired ``jev-routing`` plugin, now an optional module of ``hermes-bots``).
+"""Model Routing (the retired ``jev-routing`` plugin, now an optional module of ``agents-cs``).
 
 Server-side model and effort routing per turn, configurable slots, a coding floor and read-only Jev reviews.
 Off unless configured (see ``settings.py``); the root ``__init__`` only calls ``register`` for a profile that

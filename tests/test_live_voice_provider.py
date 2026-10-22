@@ -2,7 +2,7 @@ import sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import plugin_loader
-plugin_loader.load_root()  # the plugin as a package; its voice module is hermes_bots_dashboard.voice
+plugin_loader.load_root()  # the plugin as a package; its voice module is agents_cs_dashboard.voice
 """Primary subscription wire contract. Fixtures contain no credentials."""
 import unittest
 import asyncio
@@ -10,7 +10,7 @@ import json
 import secrets
 import httpx
 
-from hermes_bots_dashboard.voice.live_voice_auth import LiveCredentials
+from agents_cs_dashboard.voice.live_voice_auth import LiveCredentials
 
 
 class _Auth:
@@ -34,7 +34,7 @@ class _Socket:
 
 class LiveVoiceTransportTests(unittest.IsolatedAsyncioTestCase):
     async def test_provider_event_diagnostics_keep_raw_types_without_frame_payloads(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
         events = []
         async def handler(request):
@@ -65,7 +65,7 @@ class LiveVoiceTransportTests(unittest.IsolatedAsyncioTestCase):
                 await provider.close()
 
     async def test_real_http_serializer_attaches_sideband_once_before_returning_sdp(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider, CODEX_CALL_URL
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider, CODEX_CALL_URL
         sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
         requests, sockets, events = [], [], []
         async def handle(request):
@@ -98,7 +98,7 @@ class LiveVoiceTransportTests(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(ws.sent[-1]["type"], "session.close")
 
     async def test_subscription_denial_never_falls_back_or_reposts(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider, LiveProviderError
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider, LiveProviderError
         called=[]
         async def handler(request):
             called.append(str(request.url))
@@ -116,7 +116,7 @@ class SharedHttpClientTests(unittest.IsolatedAsyncioTestCase):
     """Call setup reuses one keep-alive client per event loop unless a client is injected."""
 
     async def asyncSetUp(self):
-        from hermes_bots_dashboard.voice import live_voice_provider
+        from agents_cs_dashboard.voice import live_voice_provider
         self.module = live_voice_provider
         self.saved = live_voice_provider._SHARED_HTTP
         live_voice_provider._SHARED_HTTP = None
@@ -145,7 +145,7 @@ class SharedHttpClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIsNot(self.module._shared_http_client(), second)  # A closed client is replaced too.
 
     async def test_setup_without_injected_client_reuses_and_never_closes_shared_client(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
         requests = []
         async def handler(request):
@@ -166,7 +166,7 @@ class SharedHttpClientTests(unittest.IsolatedAsyncioTestCase):
         self.assertIs(self.module._SHARED_HTTP[1], shared)
 
     async def test_injected_client_is_used_and_shared_client_untouched(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         sdp = "v=0\r\nm=audio 9 UDP/TLS/RTP/SAVPF 111\r\n"
         async def handler(request):
             return httpx.Response(201, headers={"Location": "/v1/live/rtc_fixture"}, text=sdp)
@@ -184,7 +184,7 @@ class SharedHttpClientTests(unittest.IsolatedAsyncioTestCase):
 
 class LiveVoiceProviderTests(unittest.TestCase):
     def test_subscription_instructions_cover_delegation_and_continued_turns(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider, DEFAULT_INSTRUCTIONS
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider, DEFAULT_INSTRUCTIONS
 
         provider = CodexLiveProvider(auth=_Auth())
         payload = provider._create_payload(
@@ -217,7 +217,7 @@ class LiveVoiceProviderTests(unittest.TestCase):
         self.assertEqual(payload["session"]["delegation"], {"type": "client", "ack_filler": False})
 
     def test_subscription_delegation_preserves_opaque_identity_and_task(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         event = CodexLiveProvider.decode_event({
             "type": "delegation.created", "item": {
                 "type": "delegation", "target": "client", "id": "delegation_fixture_a",
@@ -230,12 +230,12 @@ class LiveVoiceProviderTests(unittest.TestCase):
         }))
 
     def test_audio_interruption_is_not_task_cancellation(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         self.assertEqual(CodexLiveProvider.decode_event({"type": "output_audio_buffer.cleared"}),
                          {"kind": "audio_cleared"})
 
     def test_results_use_speakable_quicksilver_channel(self):
-        from hermes_bots_dashboard.voice.live_voice_provider import CodexLiveProvider
+        from agents_cs_dashboard.voice.live_voice_provider import CodexLiveProvider
         frames = CodexLiveProvider.result_frames("delegation_fixture_a", "Finished: " + "🧑🏾\u200d💻" * 150)
         self.assertGreater(len(frames), 1)
         self.assertEqual("".join(x["content"][0]["text"] for x in frames), "Finished: " + "🧑🏾\u200d💻" * 150)

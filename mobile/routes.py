@@ -1,4 +1,4 @@
-"""The ``mobile`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/hermes-bots/`` behind
+"""The ``mobile`` module's router, mounted by ``dashboard/plugin_api.py`` under ``/api/plugins/agents-cs/`` behind
 Hermes's own dashboard authentication (never expose it as a standalone API):
 
     GET  mobile/reads?all=       the owner's unread chats, this device's badge and the attention summary

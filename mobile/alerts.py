@@ -16,7 +16,7 @@ from . import devices, home, outbox, replies, sealed, state
 # What Apple sees on a sealed alert; shared with the Claude Code host.
 from .sealed import APPROVAL_PLACEHOLDER, QUESTION_PLACEHOLDER, REPLY_PLACEHOLDER, TASK_PLACEHOLDER  # noqa: F401
 
-log = logging.getLogger("hermes_bots.mobile")
+log = logging.getLogger("agents_cs.mobile")
 
 REPLY_EXPIRY = 86400  # a reply alert is useless after a day
 EVENT_EXPIRY = 3600   # approvals, questions, tasks and badge updates after an hour

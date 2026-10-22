@@ -1,7 +1,7 @@
 """Model Routing's switches and key, read from Hermes's config and home (no Hermes imports at load time).
 
-Routing is an optional module of the ``hermes-bots`` plugin and is **off unless configured**: a profile has it
-when ``plugins.entries.hermes-bots.settings.routing_mode`` is set (``off`` | ``shadow`` | ``on``; ``off`` still
+Routing is an optional module of the ``agents-cs`` plugin and is **off unless configured**: a profile has it
+when ``plugins.entries.agents-cs.settings.routing_mode`` is set (``off`` | ``shadow`` | ``on``; ``off`` still
 lets the app switch Auto model / Auto effort on per bot), or when the profile already has a routing store
 (``<home>/jev-routing-v2.sqlite``, written by the retired jev-routing plugin and kept where it is).
 """
