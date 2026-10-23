@@ -8,7 +8,7 @@ connector drains. That works from any Hermes process (a worker or a profile's ga
 hand-off. The kinds are ``approval``, ``question`` and ``nudge`` (``alerts.py``) and these two:
 
 * ``task``      ``{event: requested|resolved, board, task_id, title, bot, kind, reason}`` rings the phone
-                ("Friday needs your decision on …") or clears that alert everywhere.
+                ("Friday needs your input", kind ``blocked``/``review``) or clears that alert everywhere.
 * ``attention`` ``{board, count, tasks: [{id, title, bot, kind}], decisions}``: what the app icon badge counts beside
                 unread chats, and the list diffed to clear alerts for tasks that stopped needing the person on the
                 desktop.
@@ -59,10 +59,9 @@ def task_event(event: str, *, board: str | None, task_id: str, title: str | None
 
 
 def request_kind(row: dict[str, Any]) -> str:
-    """Why a root needs the person, for the alert's words: decision, review, blocked or stuck."""
+    """Why a root needs the person, for the alert's words: review, blocked or stuck. Never ``decision`` since
+    task-bound cards were removed (2026-10-23): a worker's question is a block."""
     first = (row.get("attention") or {}).get("first") or {}
-    if first.get("kind") == "card":
-        return "decision"
     if first.get("kind") == "review" or row.get("status") == "review":
         return "review"
     if (row.get("attention") or {}).get("state") == "stuck":

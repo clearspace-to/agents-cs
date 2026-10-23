@@ -2,10 +2,15 @@
 
 Four dashboard routes, mounted by ``cards/routes.py`` under ``/api/plugins/agents-cs/``:
 
-GET  tasks/board?board=&include_archived=     the board with containment, attention, allowed moves and open actions
+GET  tasks/board?board=&include_archived=     the board with containment, attention and allowed moves
 POST tasks/quick-add?board=                   one call: create the task, write it up or plan it, start it
 POST tasks/{id}/comments?board=               a comment plus the right follow-up, coordinator included
-POST actions/{action_id}/answers?board=       the person's answer to a task-bound card
+POST actions/{action_id}/answers?board=       410 task_cards_removed (old app builds still call it)
+
+Task-bound cards were removed on 2026-10-23 (Mark): a worker that needs the person blocks its task with the
+question in words (``kanban_block(kind="needs_input", reason=…)``, see ``block_question``) and the person answers
+with an ordinary task comment. Cards bound before then are ignored everywhere: they never count as attention,
+never appear in ``actions`` and never hold a worker back.
 
 the ``pre_tool_call`` guard the plugin registers (``tool_call_block``), and the observers that tell the
 mobile module when a task needs the person (``notify``).
@@ -32,13 +37,12 @@ from dataclasses import asdict, is_dataclass
 from typing import Any, Callable
 
 try:  # the plugin lives in two homes (a profile's and the root's); tests import it bare
-    from . import cards, coordinator, notify
-    from .store import DecisionLog, StoreError, resolve_board
+    from . import coordinator, notify
+    from .store import DecisionLog, resolve_board
 except ImportError:  # pragma: no cover - loaded as a top-level module by the dashboard router
-    import cards  # type: ignore
     import coordinator  # type: ignore
     import notify  # type: ignore
-    from store import DecisionLog, StoreError, resolve_board  # type: ignore
+    from store import DecisionLog, resolve_board  # type: ignore
 
 CAPABILITY = 2
 # The moves Hermes's dashboard accepts by hand, from each column (its PATCH verbs, mapped against the live
@@ -65,10 +69,8 @@ HUMAN_BLOCKS = {"needs_input", "capability"}
 # Also the events that mark a block-loop escalation and what clears it (loop_escalated).
 EVENT_KINDS = ("decomposed", "created", "review_requested", "blocked", "scheduled", "block_loop_detected",
                "claimed", "unblocked", "promoted", "completed", "status", "unarchived", "restored", "specified")
-FINISHING_TOOLS = {"kanban_complete", "kanban_request_review"}
 EXTERNAL_WAIT_PREFIX = "[Waiting for reply] "
 _TASK_ID = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
-_HEX_32 = re.compile(r"^[0-9a-f]{32}$")
 _SLUG = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 
 
@@ -206,30 +208,26 @@ def dependents(task_id: str, links: list[tuple[str, str]]) -> list[str]:
 
 
 def pending_requests(task: dict[str, Any], family: list[str], *, tasks_by_id: dict[str, dict[str, Any]],
-                     actions_by_task: dict[str, list[dict[str, Any]]],
                      reviews_by_task: dict[str, dict[str, Any] | None]) -> list[dict[str, Any]]:
-    """What waits on the person for this task and its contained descendants, oldest first: one entry
-    per open card, one per task in review."""
+    """What waits on the person for this task and its contained descendants, oldest first: one entry per
+    task in review. Task-bound cards are gone (2026-10-23), so no request is ever of kind ``card``; a worker's
+    question is a ``needs_input`` block, which ``attention_state`` reads from the task itself."""
     requests: list[dict[str, Any]] = []
     for member_id in [task["id"], *family]:
         member = tasks_by_id.get(member_id)
         if member is None or (member_id != task["id"] and member.get("status") == "archived"):
             continue
-        for action in actions_by_task.get(member_id, []):
-            requests.append({"kind": "card", "action_id": action["action_id"], "task_id": member_id,
-                             "task_title": member.get("title"), "title": action["title"],
-                             "explanation": action.get("explanation"), "created_at": action.get("created_at") or 0})
         if member.get("status") == "review":
             review = reviews_by_task.get(member_id) or {}
             requests.append({"kind": "review", "task_id": member_id, "task_title": member.get("title"),
                              "title": f"Review: {member.get('title')}",
                              "summary": review.get("summary") or member.get("latest_summary"),
                              "created_at": review.get("created_at") or member.get("started_at") or member.get("created_at") or 0})
-    requests.sort(key=lambda r: (r["created_at"], str(r.get("action_id") or r["task_id"])))
+    requests.sort(key=lambda r: (r["created_at"], r["task_id"]))
     return requests
 
 
-def attention_state(task: dict[str, Any], *, pending: int, has_card: bool, waiting: list[str],
+def attention_state(task: dict[str, Any], *, pending: int, waiting: list[str],
                     child_statuses: list[str], escalated: bool = False, external_wait: bool = False,
                     family_state: str | None = None, family_external: bool = False) -> str:
     """The contract's rules, in order. A block Hermes classed as a dependency reads as waiting and
@@ -245,7 +243,7 @@ def attention_state(task: dict[str, Any], *, pending: int, has_card: bool, waiti
         return "archived"
     if pending > 0:
         return "needs_you"
-    if status == "blocked" and task.get("block_kind") in HUMAN_BLOCKS and not has_card:
+    if status == "blocked" and task.get("block_kind") in HUMAN_BLOCKS:
         return "needs_you"
     if escalated and status in ("triage", "todo", "blocked"):
         return "needs_you"
@@ -279,18 +277,17 @@ def attention_state(task: dict[str, Any], *, pending: int, has_card: bool, waiti
 
 
 def family_attention(family: list[str], *, tasks_by_id: dict[str, dict[str, Any]],
-                     actions_by_task: dict[str, list[dict[str, Any]]],
                      events_by_task: dict[str, list[dict[str, Any]]]) -> list[dict[str, Any]]:
-    """Contained descendants that need a person on their own account (a human block with no card, a
-    block-loop escalation, a stuck diagnostic or a non-dependency block), needs_you before stuck, then
-    tree order. Open cards and reviews are not here: ``pending_requests`` already counts those."""
+    """Contained descendants that need a person on their own account (a human block, a block-loop
+    escalation, a stuck diagnostic or a non-dependency block), needs_you before stuck, then tree order.
+    Reviews are not here: ``pending_requests`` already counts those."""
     found: list[dict[str, Any]] = []
     for member_id in family:
         member = tasks_by_id.get(member_id)
         if member is None or member.get("status") in TERMINAL:
             continue
         events = events_by_task.get(member_id, [])
-        state = attention_state(member, pending=0, has_card=bool(actions_by_task.get(member_id)), waiting=[],
+        state = attention_state(member, pending=0, waiting=[],
                                 child_statuses=[], escalated=loop_escalated(events),
                                 external_wait=waits_for_reply(member, events))
         if state in ("needs_you", "stuck"):
@@ -322,7 +319,7 @@ def family_block_line(flagged: list[dict[str, Any]]) -> str:
 
 
 def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: dict[str, list[dict[str, Any]]],
-                  links: list[tuple[str, str]], actions: list[dict[str, Any]], latest_event_id: int,
+                  links: list[tuple[str, str]], latest_event_id: int,
                   now: int | None = None, include_archived: bool = False,
                   stored_containment: list[tuple[str, str]] | tuple = (), preparing: set[str] | frozenset = frozenset(),
                   stalls: set[str] | frozenset = frozenset()) -> dict[str, Any]:
@@ -330,7 +327,8 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
     Hermes's own board puts on them); this adds containment, dependencies, review, block reason,
     attention, the allowed moves and whether a write-up is still running (``preparing``), and recomputes
     ``link_counts`` and ``progress`` the way Hermes's board does. A root in ``stalls`` (the coordinator left
-    nothing moving) needs the person for as long as its family is still stalled."""
+    nothing moving) needs the person for as long as its family is still stalled. ``actions`` is always ``[]``:
+    task-bound cards were removed on 2026-10-23, and shipped app builds still decode the key."""
     tasks_by_id = {t["id"]: t for t in tasks}
     parent_of, children_of = containment(events_by_task, stored_containment)
     link_counts: dict[str, dict[str, int]] = {}
@@ -342,10 +340,6 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
             bucket = progress.setdefault(parent, {"done": 0, "total": 0})
             bucket["total"] += 1
             bucket["done"] += tasks_by_id[child].get("status") == "done"
-    actions_by_task: dict[str, list[dict[str, Any]]] = {}
-    for action in actions:
-        if action.get("state") == "open" and action.get("task_id") in tasks_by_id:
-            actions_by_task.setdefault(action["task_id"], []).append(action)
     reviews_by_task = {tid: review_from_events(events_by_task.get(tid, [])) for tid in tasks_by_id}
 
     # Containment only among tasks the board lists: a child whose root was archived stands alone
@@ -359,8 +353,7 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
         events = events_by_task.get(task["id"], [])
         family = descendants(children_of, task["id"])
         waiting = waits_on(task["id"], links, tasks_by_id)
-        requests = pending_requests(task, family, tasks_by_id=tasks_by_id, actions_by_task=actions_by_task,
-                                    reviews_by_task=reviews_by_task)
+        requests = pending_requests(task, family, tasks_by_id=tasks_by_id, reviews_by_task=reviews_by_task)
         row["link_counts"] = link_counts.get(task["id"], {"parents": 0, "children": 0})
         row["progress"] = progress.get(task["id"])
         parent = parent_of.get(task["id"])
@@ -371,10 +364,8 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
         row["review"] = reviews_by_task.get(task["id"])
         row["allowed_moves"] = allowed_moves(task.get("status"))
         row["preparing"] = task["id"] in preparing
-        flagged = family_attention(family, tasks_by_id=tasks_by_id, actions_by_task=actions_by_task,
-                                   events_by_task=events_by_task)
-        inputs = dict(pending=len(requests), has_card=bool(actions_by_task.get(task["id"])),
-                      waiting=waiting, escalated=loop_escalated(events),
+        flagged = family_attention(family, tasks_by_id=tasks_by_id, events_by_task=events_by_task)
+        inputs = dict(pending=len(requests), waiting=waiting, escalated=loop_escalated(events),
                       external_wait=(row["block_reason"] or "").startswith(EXTERNAL_WAIT_PREFIX),
                       child_statuses=[tasks_by_id[c].get("status") for c in family if c in tasks_by_id],
                       family_external=any(waits_for_reply(tasks_by_id[c], events_by_task.get(c, []))
@@ -389,8 +380,7 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
             row["block_reason"] = family_block_line(flagged)
             row["attention"]["subtask"] = flagged[0]
         elif task["id"] in stalls and state != "needs_you":
-            stalled = stall_line(task["id"], family, tasks_by_id=tasks_by_id, links=links, events_by_task=events_by_task,
-                                 open_card_tasks=set(actions_by_task))
+            stalled = stall_line(task["id"], family, tasks_by_id=tasks_by_id, links=links, events_by_task=events_by_task)
             if stalled:
                 row["block_reason"] = stalled[0]
                 row["attention"] = {"state": "needs_you", "pending": len(requests), "first": requests[0] if requests else None,
@@ -399,20 +389,17 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
     assignees = sorted({t.get("assignee") for t in tasks if t.get("assignee") and t.get("status") != "archived"})
     return {"capability": CAPABILITY, "board": board, "latest_event_id": int(latest_event_id or 0),
             "now": int(now if now is not None else time.time()), "assignees": assignees, "tasks": out,
-            "actions": [a for a in actions if a.get("state") == "open" and a.get("task_id") in tasks_by_id],
+            "actions": [],
             "containment": [[root, child] for root, kids in children_of.items() for child in kids]}
 
 
-def follow_up_plan(status: str | None, *, decomposed: bool, unsatisfied: list[tuple[str, str]],
-                   card_open: bool) -> tuple[str, str | None]:
+def follow_up_plan(status: str | None, *, decomposed: bool, unsatisfied: list[tuple[str, str]]) -> tuple[str, str | None]:
     """The contract's follow-up table: ``(step, detail)`` where step is coordinate, promote, waiting,
     none, reopen_review or reopen_done. A decomposed root is coordinated whatever its own status, even
     once every step is finished: "add a step" or "redo that step" needs the coordinator (Mark's invite
     task, 2026-10-11, went to a plain worker that could only comment)."""
     if decomposed:
         return "coordinate", None
-    if card_open and status in ("triage", "todo", "blocked"):
-        return "none", "The decision above still needs you."
     if status in ("triage", "todo", "blocked"):
         if unsatisfied:
             names = ", ".join(f"{tid} ({s})" for tid, s in unsatisfied)
@@ -443,8 +430,7 @@ def family_snapshot(root_id: str, children_of: dict[str, list[str]], tasks_by_id
     return rows
 
 
-def coordination_instruction(*, board: str, root: dict[str, Any], comment: str, family: list[dict[str, Any]],
-                             open_cards: list[dict[str, Any]]) -> str:
+def coordination_instruction(*, board: str, root: dict[str, Any], comment: str, family: list[dict[str, Any]]) -> str:
     """The bounded prompt the app submits to the orchestrator session (contract, Coordination)."""
     members = "\n".join(
         f"- {m['id']} · {m.get('title') or '(untitled)'} · {m.get('status')}"
@@ -452,13 +438,10 @@ def coordination_instruction(*, board: str, root: dict[str, Any], comment: str, 
         + (f" · {m['assignee']}" if m.get("assignee") else "")
         + (f" · waits for {', '.join(m['waits_on'])}" if m.get("waits_on") else "")
         for m in family) or "- (none)"
-    cards_text = "\n".join(
-        f"- {c['task_id']}: \"{c['title']}\" (card {c['action_id']})" for c in open_cards) or "- none"
     return (
         f"You are coordinating Kanban task {root['id']} \"{root.get('title') or ''}\" on board {board}.\n\n"
         f"The person commented on the root task:\n<<<\n{comment.strip()}\n>>>\n\n"
         f"Family (the root and its contained tasks):\n{members}\n\n"
-        f"Open decision cards waiting on the person:\n{cards_text}\n\n"
         "Your job: review the root and every step together against the person's comment, then change the plan so\n"
         "the work keeps moving toward what they now want. Read each step first (kanban_show: brief, comments, results).\n\n"
         "Rules:\n"
@@ -473,33 +456,73 @@ def coordination_instruction(*, board: str, root: dict[str, Any], comment: str, 
         "   The main task itself can be restarted or redone like a step. If the person says the task is not\n"
         "   finished, or asks for more work, add or redo the step that does it; a comment never reopens anything.\n"
         "   A comment alone wakes nothing: every step you change gets restart or redo, never only kanban_comment.\n"
-        "3. A changed draft means the step withdraws its card and makes a new one; never answer a card for the person.\n"
-        f"4. If the request is ambiguous, ask with one hermes_card_selection on the root (task_id {root['id']}) and stop.\n"
+        "3. Never answer a step's question for the person, and never approve a draft on their behalf.\n"
+        f"4. When the request is ambiguous, ask in one kanban_comment on the root ({root['id']}): the question in "
+        "words, any options written out, and stop. Don't block the root (Hermes only blocks a running or ready task). "
+        "No cards: the person answers with a comment.\n"
         "5. Never send messages or spend money.\n"
         "6. Before you finish, at least one step must be ready or running, unless only the person can unblock it.\n"
         "7. Finish by posting one short kanban_comment on the root saying what you changed and why."
     )
 
 
-def response_comment(card_id: str, answer: Any, readable: list[str] | None,
-                     card: dict[str, Any] | None = None) -> str:
-    """The comment an answer becomes: readable lines, then the block a chat answer carries."""
-    lines = [str(line).strip() for line in readable or [] if str(line).strip()]
-    if card:
-        # Readable history, never a hermes-card fence: evidence, not a new approval UI.
-        data = card["data"]
-        lines.append("Answered: " + card["title"])
-        if card["type"] == "message":
-            lines.append("Original draft (any edits are in the answer below):")
-            for key in ("channel", "from", "to", "cc", "thread", "subject", "attachments"):
-                value = data.get(key)
-                if value:
-                    lines.append(key.title() + ": " + (", ".join(value) if isinstance(value, list) else str(value)))
-            lines.append("\n" + data["body"])
-        elif card["type"] == "selection":
-            lines.append("Choices: " + "; ".join(o["label"] for o in data.get("options", [])))
-    block = f"```{cards.RESPONSE_FENCE}\n" + cards.canonical_json({"card_id": card_id, "values": answer if answer is not None else {}}) + "\n```"
-    return ("\n".join(lines) + "\n\n" + block) if lines else block
+ASK_SEND = "Reply send, or tell me what to change."
+
+
+def block_question(card: dict[str, Any]) -> str:
+    """The question a card would have asked, in words, for ``kanban_block(kind="needs_input", reason=…)``: a worker
+    no longer shows cards (2026-10-23). The app shows the block reason as the task's question and the person answers
+    with a comment, so everything they need to answer is written out: the options, the form's fields, or the
+    whole drafted message (ending with ``ASK_SEND``)."""
+    data, kind = card.get("data") or {}, card.get("type")
+    lines = [card["title"]] + ([card["subtitle"]] if card.get("subtitle") else [])
+    if isinstance(data.get("description"), str):
+        lines.append(data["description"])
+    if kind == "selection":
+        lines += ["", "Pick one or more:" if data.get("mode") == "multiple" else "Pick one:"]
+        for number, option in enumerate(data.get("options") or [], 1):
+            label = option["label"] + (" (recommended)" if option.get("recommended") else "")
+            lines.append(f"{number}. {label}" + (f": {option['detail']}" if option.get("detail") else ""))
+        lines += ["", "Reply with your choice, or tell me what you'd rather do."]
+    elif kind == "message":
+        lines.append("")
+        lines.append("Channel: " + str(data.get("channel") or "message"))
+        for key, label in (("from", "From"), ("to", "To"), ("cc", "Cc"), ("thread", "Thread"), ("subject", "Subject"),
+                           ("attachments", "Attachments")):
+            value = data.get(key)
+            if value:
+                lines.append(f"{label}: " + (", ".join(value) if isinstance(value, list) else str(value)))
+        lines += ["", str(data.get("body") or ""), "", ASK_SEND]
+    elif kind == "form":
+        lines += ["", "Please answer:"]
+        for field in data.get("fields") or []:
+            line = "- " + field["label"] + (" (required)" if field.get("required") else "")
+            if field.get("options"):
+                line += ": " + " / ".join(option["label"] for option in field["options"])
+            if field.get("help_text"):
+                line += f" ({field['help_text']})"
+            lines.append(line)
+        lines += ["", "Reply with your answers."]
+    elif kind == "checklist":
+        lines.append("")
+        lines += [f"[{'x' if item.get('done') else ' '}] {item['label']}" + (f": {item['detail']}" if item.get("detail") else "")
+                  for item in data.get("items") or []]
+        lines += ["", "Reply with what to tick or change."]
+    return "\n".join(lines).strip()
+
+
+def ask_in_words(card: dict[str, Any], task_id: str) -> dict[str, Any]:
+    """What a card tool returns inside a Kanban worker for a card the person would answer: nothing is shown or
+    recorded; the worker blocks its task with the question in words and stops."""
+    reason = block_question(card)
+    step = ("Cards aren't shown on Kanban tasks. Ask in words instead: call "
+            f"kanban_block(kind=\"needs_input\", reason=<block_reason, verbatim>) on task {task_id} and stop. "
+            "Don't call another card tool for this question. The person answers with a comment on the task, "
+            "and Hermes wakes you when it lands: read the latest comments first and treat that comment as the answer.")
+    if card.get("type") == "message":
+        step += (" Send nothing until their comment clearly says to send it; if it asks for changes, rewrite the draft "
+                 "and ask again the same way. If they edited the wording, send their wording exactly.")
+    return {"shown": False, "task_id": task_id, "block_reason": reason, "next_step": step}
 
 
 # --- Guard (pre_tool_call) ------------------------------------------------------------------------
@@ -509,18 +532,13 @@ def tool_call_block(tool_name: str, args: Any, *, session_id: str, decisions: De
                     env: Any = None) -> str | None:
     """The contract's Guard. Returns the block message, or None to let the call through.
 
-    Worker (``HERMES_KANBAN_TASK`` set): finishing the task waits for the person's answer to an open
-    task-bound card. Coordinator (the session is a registered fence): every kanban tool stays inside
-    the root's family; ``kanban_create`` must hang off a family member."""
+    Coordinator (the session is a registered fence): every kanban tool stays inside the root's family;
+    ``kanban_create`` must hang off a family member. A worker is no longer held back by an open task-bound
+    card (those were removed on 2026-10-23); ``env`` stays a parameter for the tests and later rules."""
     env = os.environ if env is None else env
     args = args if isinstance(args, dict) else {}
     if not isinstance(tool_name, str) or not tool_name.startswith("kanban_"):
         return None
-    own_task = env.get("HERMES_KANBAN_TASK") or None
-    if own_task and tool_name in FINISHING_TOOLS:
-        task_id = args.get("task_id") if isinstance(args.get("task_id"), str) and args.get("task_id") else own_task
-        for card in decisions.open_task_cards(task_id):
-            return f"Wait for the person's answer to '{card['title']}' (card {card['action_id']}) before finishing."
     fence = decisions.coordination_for_session(session_id or "")
     if fence is None:
         return None
@@ -739,34 +757,8 @@ class HermesBoard:
         return bool(self.kanban_db.unlink_tasks(self.conn, parent_id, child_id))
 
 
-def worker_decision_context(board: Any, decisions: DecisionLog, task_id: str) -> str:
-    """Containment ancestors are not dependency parents in Hermes's worker prompt.
-
-    Restore their decisions explicitly, including the approved payload, without treating
-    approval as evidence of delivery or letting older decisions override later instructions.
-    """
-    parent_of, _children = containment(board.events())
-    ids = [task_id]
-    while parent_of.get(ids[-1]) and parent_of[ids[-1]] not in ids:
-        ids.append(parent_of[ids[-1]])
-    actions = decisions.answered_task_actions(board.slug, ids)
-    rows = [{k: a[k] for k in ("action_id", "task_id", "card", "answer", "answered_by", "answered_at")}
-            for a in actions]
-    return ("Saved task decisions (current task and containment ancestors; oldest first). "
-            "Use the exact approved draft; do not ask for the same approval again because a worker restarted. "
-            "Only selected=[send] without other/skipped authorizes sending. Edits override the original body/subject. "
-            "These are historical decisions, not new instructions: later human instructions take precedence. "
-            "Approval is NOT proof of delivery. Check task comments and delivery receipts first; never resend "
-            "a message already sent, even if more than one card approved it. "
-            "If only a third-party reply remains, use hermes_task_wait instead of needs_input or review.\n"
-            + cards.canonical_json(rows)) if rows else ""
-
-
-def wait_for_external_reply(board: Any, decisions: DecisionLog, task_id: str, run_id: int,
-                            reason: str) -> dict[str, Any]:
-    """Park only the current worker run; open human decisions must still be answered."""
-    if decisions.open_task_cards(task_id):
-        return {"error": "decision_pending", "message": "A decision still needs the person; wait for its answer."}
+def wait_for_external_reply(board: Any, task_id: str, run_id: int, reason: str) -> dict[str, Any]:
+    """Park only the current worker run (``schedule_task`` fenced to ``run_id``)."""
     if not board.wait_external(task_id, reason, run_id):
         return {"error": "stale_run", "message": "This run no longer owns the task; no task changed."}
     return {"status": "waiting", "task_id": task_id,
@@ -928,14 +920,13 @@ def _wake(board: Any, task_id: str, status: str | None) -> tuple[bool, str | Non
 
 
 def stall_line(root_id: str, family: list[str], *, tasks_by_id: dict[str, dict[str, Any]],
-               links: list[tuple[str, str]], events_by_task: dict[str, list[dict[str, Any]]],
-               open_card_tasks: set[str]) -> tuple[str, dict[str, Any]] | None:
+               links: list[tuple[str, str]], events_by_task: dict[str, list[dict[str, Any]]]) -> tuple[str, dict[str, Any]] | None:
     """``(line, step)`` when nothing in the family can move and nothing already asks the person: every
-    unfinished member sits in triage or todo, none escalated, no card open. ``step`` is the one that should
-    be running (waits for nothing unfinished), else the first stuck one. None otherwise."""
+    unfinished member sits in triage or todo, none escalated. ``step`` is the one that should be running
+    (waits for nothing unfinished), else the first stuck one. None otherwise."""
     members = [tasks_by_id[t] for t in [root_id, *family] if t in tasks_by_id]
     unfinished = [m for m in members if m.get("status") not in TERMINAL]
-    if not unfinished or any(m["id"] in open_card_tasks for m in members):
+    if not unfinished:
         return None
     if any(m.get("status") not in ("triage", "todo") for m in unfinished):
         return None
@@ -965,8 +956,7 @@ def after_coordination(board_ref: Any, root_id: str, decisions: DecisionLog, *,
         _parent_of, children_of = containment(events, decisions.containment_pairs(board.slug))
         tasks_by_id = {t["id"]: t for t in board.tasks(include_archived=True)}
         found = stall_line(root_id, descendants(children_of, root_id), tasks_by_id=tasks_by_id, links=board.links(),
-                           events_by_task=events,
-                           open_card_tasks={a["task_id"] for a in decisions.open_task_actions(board.slug)})
+                           events_by_task=events)
         was = root_id in decisions.stalls(board.slug)
         if found and not was:
             decisions.record_stall(board.slug, root_id)
@@ -987,7 +977,7 @@ def after_coordination(board_ref: Any, root_id: str, decisions: DecisionLog, *,
 def board_payload(board: Any, decisions: DecisionLog, *, include_archived: bool = False) -> dict[str, Any]:
     tasks = board.tasks(include_archived=True)  # containment and dependencies see archived members too
     payload = compose_board(board=board.slug, tasks=tasks, events_by_task=board.events(), links=board.links(),
-                            actions=decisions.open_task_actions(board.slug), latest_event_id=board.latest_event_id(),
+                            latest_event_id=board.latest_event_id(),
                             include_archived=include_archived, stored_containment=decisions.containment_pairs(board.slug),
                             preparing=decisions.preparing_tasks(board.slug), stalls=decisions.stalls(board.slug))
     # A family derived from Hermes's events is remembered, so the board no longer depends on those payloads.
@@ -1214,16 +1204,11 @@ def _comment_on_task(board: Any, decisions: DecisionLog, task_id: str, body: dic
     try:
         task = board.task(task_id) or task
         status = task.get("status")
-        open_cards = decisions.open_task_cards(task_id)
-        # A written reply can replace the offered choices. Retire old requests without approving
-        # their proposed action; the saved comment is the worker's instruction to re-evaluate.
-        if not decomposed:
-            for action in open_cards:
-                decisions.withdraw(action["action_id"])
-            open_cards = decisions.open_task_cards(task_id)
+        # A card bound before 2026-10-23 is retired, never approved: the comment is the answer now.
+        for action in decisions.open_task_cards(task_id):
+            decisions.withdraw(action["action_id"])
         step, detail = follow_up_plan(status, decomposed=decomposed,
-                                      unsatisfied=board.unsatisfied_parents(task_id) if status in ("triage", "todo", "blocked") else [],
-                                      card_open=bool(open_cards))
+                                      unsatisfied=board.unsatisfied_parents(task_id) if status in ("triage", "todo", "blocked") else [])
         if (not decomposed and status == "scheduled"
                 and (block_reason(events.get(task_id, [])) or "").startswith(EXTERNAL_WAIT_PREFIX)):
             # A new human reply is the awaited event; ordinary time schedules stay intact.
@@ -1264,10 +1249,8 @@ def _coordinate(board: Any, decisions: DecisionLog, root: dict[str, Any], commen
     gets the instruction back to submit. Each parent comment gets its own session: a runtime session id
     only lives as long as the socket that made it (live gate, 2026-10-05)."""
     family = family_snapshot(root["id"], children_of, tasks_by_id, board.links())
-    member_ids = {m["id"] for m in family}
     decisions.clear_stall(board.slug, root["id"])
-    open_cards = [a for a in decisions.open_task_actions(board.slug) if a.get("task_id") in member_ids]
-    instruction = coordination_instruction(board=board.slug, root=root, comment=comment, family=family, open_cards=open_cards)
+    instruction = coordination_instruction(board=board.slug, root=root, comment=comment, family=family)
     base = {"comment_id": comment_id, "status": root.get("status"), "route": "coordinate"}
     if session_ids:
         for sid in session_ids:
@@ -1298,55 +1281,10 @@ def _orchestrator_is_assignee() -> bool:
 
 def answer_action(board_factory: Callable[[str | None], Any], decisions: DecisionLog, action_id: str,
                   body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """``POST actions/{action_id}/answers``: record the answer, post it as a comment on the origin task,
-    unblock the task if the card had blocked it."""
-    if not _HEX_32.fullmatch(action_id or ""):
-        return 404, {"detail": "not_found"}
-    author = _author(body)
-    answer = body.get("answer") if isinstance(body.get("answer"), dict) else {}
-    readable = body.get("readable") if isinstance(body.get("readable"), list) else []
-    given = body.get("payload_hash") if isinstance(body.get("payload_hash"), str) else None
-    try:
-        _state, action = decisions.answer(action_id, given, answer, author)
-    except StoreError as error:
-        return (404 if error.code == "not_found" else 409), {"detail": error.code}
-    result: dict[str, Any] = {"state": "answered", "comment_id": None, "task_status": None}
-    try:
-        board = board_factory(action.get("board"))
-    except Exception as error:
-        return 200, {**result, "detail": f"Answer saved; the task could not be reached: {error}"}
-    try:
-        comment_id = board.add_comment(action["task_id"], author,
-                                       response_comment(action_id, answer, readable, action.get("card")))
-        decisions.set_answer_comment(action_id, comment_id)
-        result["comment_id"] = comment_id
-        task = board.task(action["task_id"])
-        resumed = True
-        if task is not None and task.get("status") == "blocked":
-            resumed = board.unblock(action["task_id"])
-            task = board.task(action["task_id"]) or task
-        elif (task is not None and task.get("status") == "triage"
-              and task.get("block_kind") in HUMAN_BLOCKS
-              and loop_escalated(board.events([action["task_id"]]).get(action["task_id"], []))):
-            resumed = board.release_triage(action["task_id"], author)
-            task = board.task(action["task_id"]) or task
-        result["task_status"] = task.get("status") if task else None
-        if not resumed or task is None or task.get("status") in ("triage", "blocked"):
-            result["detail"] = "Answer saved, but the task did not resume. Move it to Ready to continue; do not approve again."
-        else:
-            board.dispatch()
-        return 200, result
-    except Exception as error:
-        return 200, {**result, "detail": f"Answer saved; Hermes refused the follow-up: {error}"}
-    finally:
-        try:
-            attention_after(board, decisions, action["task_id"])
-        except Exception:
-            pass
-        try:
-            board.close()
-        except Exception:
-            pass
+    """``POST actions/{action_id}/answers``: gone since task-bound cards were removed (2026-10-23). App builds from
+    before then may still call it; they get 410 and nothing is recorded or posted. The person answers a worker's
+    question with an ordinary comment (``POST tasks/{id}/comments``)."""
+    return 410, {"detail": "task_cards_removed"}
 
 
 # --- Router ---------------------------------------------------------------------------------------

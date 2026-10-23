@@ -352,15 +352,16 @@ class ObserverTests(Recorded):
             for thread in set(threading.enumerate()) - threads_before:
                 thread.join(5)
 
-    def test_a_human_block_rings_the_phone_with_its_card(self):
+    def test_a_human_block_rings_the_phone_as_blocked_even_with_an_old_card(self):
+        # Task-bound cards were removed (2026-10-23): a card bound before then never makes the alert a "decision".
         card = selection()
         self.log.record(card, profile="friday", session_id="w1")
         self.log.bind_task(card, profile="friday", board="default", task_id="c2", root_id="r1")
         self.run_hook(plugin.on_kanban_task_blocked, task_id="c2", board="default", assignee="friday", reason="Choose a date", run_id=8, profile_name="friday")
         requested = self.recorder.events("requested")
         self.assertEqual(len(requested), 1)
-        self.assertEqual((requested[0]["task_id"], requested[0]["kind"], requested[0]["bot"], requested[0]["title"]),
-                         ("c2", "decision", "friday", "Choose a date"))
+        self.assertEqual((requested[0]["task_id"], requested[0]["kind"], requested[0]["bot"], requested[0]["title"], requested[0]["reason"]),
+                         ("c2", "blocked", "friday", "Choose a date", "Choose a date"))
         self.assertEqual(len(self.recorder.attention()), 1)
 
     def test_a_transient_block_only_refreshes_the_badge(self):

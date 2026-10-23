@@ -346,38 +346,31 @@ class DerivationTests(unittest.TestCase):
     def test_attention_state_for_each_rule(self):
         T = FakeBoard.task_row
         state = tasks.attention_state
-        self.assertEqual(state(T("a", "archived"), pending=3, has_card=True, waiting=[], child_statuses=[]), "archived")
-        self.assertEqual(state(T("a", "todo"), pending=1, has_card=False, waiting=[], child_statuses=[]), "needs_you")
-        self.assertEqual(state(T("a", "blocked", block_kind="needs_input"), pending=0, has_card=False, waiting=[], child_statuses=[]), "needs_you")
-        self.assertEqual(state(T("a", "blocked", block_kind="capability"), pending=0, has_card=False, waiting=[], child_statuses=[]), "needs_you")
+        self.assertEqual(state(T("a", "archived"), pending=3, waiting=[], child_statuses=[]), "archived")
+        self.assertEqual(state(T("a", "todo"), pending=1, waiting=[], child_statuses=[]), "needs_you")
+        self.assertEqual(state(T("a", "blocked", block_kind="needs_input"), pending=0, waiting=[], child_statuses=[]), "needs_you")
+        self.assertEqual(state(T("a", "blocked", block_kind="capability"), pending=0, waiting=[], child_statuses=[]), "needs_you")
         stuck = T("a", "todo", diagnostics=[{"kind": "repeated_crashes"}])
-        self.assertEqual(state(stuck, pending=0, has_card=False, waiting=[], child_statuses=[]), "stuck")
-        self.assertEqual(state(T("a", "running"), pending=0, has_card=False, waiting=[], child_statuses=[]), "working")
-        self.assertEqual(state(T("a", "todo"), pending=0, has_card=False, waiting=["c"], child_statuses=["done", "running"]), "working")
-        self.assertEqual(state(T("a", "done"), pending=0, has_card=False, waiting=[], child_statuses=[]), "done")
-        self.assertEqual(state(T("a", "scheduled"), pending=0, has_card=False, waiting=[], child_statuses=[]), "scheduled")
-        self.assertEqual(state(T("a", "ready"), pending=0, has_card=False, waiting=[], child_statuses=[]), "queued")
-        self.assertEqual(state(T("a", "todo"), pending=0, has_card=False, waiting=["c"], child_statuses=[]), "waiting")
-        self.assertEqual(state(T("a", "todo"), pending=0, has_card=False, waiting=[], child_statuses=[]), "not_started")
-        self.assertEqual(state(T("a", "triage"), pending=0, has_card=False, waiting=[], child_statuses=[]), "not_started")
-        self.assertEqual(state(T("a", "blocked", block_kind="dependency"), pending=0, has_card=False, waiting=[], child_statuses=[]), "waiting")
-        self.assertEqual(state(T("a", "blocked", block_kind="transient"), pending=0, has_card=False, waiting=[], child_statuses=[]), "stuck")
+        self.assertEqual(state(stuck, pending=0, waiting=[], child_statuses=[]), "stuck")
+        self.assertEqual(state(T("a", "running"), pending=0, waiting=[], child_statuses=[]), "working")
+        self.assertEqual(state(T("a", "todo"), pending=0, waiting=["c"], child_statuses=["done", "running"]), "working")
+        self.assertEqual(state(T("a", "done"), pending=0, waiting=[], child_statuses=[]), "done")
+        self.assertEqual(state(T("a", "scheduled"), pending=0, waiting=[], child_statuses=[]), "scheduled")
+        self.assertEqual(state(T("a", "ready"), pending=0, waiting=[], child_statuses=[]), "queued")
+        self.assertEqual(state(T("a", "todo"), pending=0, waiting=["c"], child_statuses=[]), "waiting")
+        self.assertEqual(state(T("a", "todo"), pending=0, waiting=[], child_statuses=[]), "not_started")
+        self.assertEqual(state(T("a", "triage"), pending=0, waiting=[], child_statuses=[]), "not_started")
+        self.assertEqual(state(T("a", "blocked", block_kind="dependency"), pending=0, waiting=[], child_statuses=[]), "waiting")
+        self.assertEqual(state(T("a", "blocked", block_kind="transient"), pending=0, waiting=[], child_statuses=[]), "stuck")
 
-    def test_board_pending_and_first_oldest_first(self):
+    def test_board_pending_is_reviews_only_and_actions_are_empty(self):
         board = family_board()
-        newer = selection("Choose a venue", ("a", "b"))
-        action_new = {"action_id": newer["id"], "task_id": "c2", "title": "Choose a venue", "explanation": None,
-                      "state": "open", "created_at": NOW - 100, "card": newer}
-        older = selection()
-        action_old = {"action_id": older["id"], "task_id": "c2", "title": "Choose a date", "explanation": "Both free.",
-                      "state": "open", "created_at": NOW - 900, "card": older}
-        answered = {"action_id": "e" * 32, "task_id": "c2", "title": "Gone", "state": "answered", "created_at": 1}
         out = tasks.compose_board(board="default", tasks=board.tasks(True), events_by_task=board.events(),
-                                  links=board.links(), actions=[action_new, action_old, answered],
-                                  latest_event_id=6, now=NOW)
+                                  links=board.links(), latest_event_id=6, now=NOW)
         by_id = {t["id"]: t for t in out["tasks"]}
         root = by_id["r1"]
         self.assertEqual((out["capability"], out["board"], out["latest_event_id"], out["now"]), (tasks.CAPABILITY, "default", 6, NOW))
+        self.assertEqual(out["actions"], [], "task-bound cards were removed (2026-10-23); the key stays for shipped apps")
         self.assertEqual(root["allowed_moves"], ["triage", "scheduled", "ready"])
         self.assertFalse(root["preparing"])
         self.assertEqual(sorted(out["containment"]), [["r1", "c1"], ["r1", "c2"], ["r1", "c3"]])
@@ -386,46 +379,42 @@ class DerivationTests(unittest.TestCase):
         self.assertIsNone(root["progress"])
         self.assertEqual(by_id["c2"]["progress"], {"done": 0, "total": 2})
         self.assertEqual(root["link_counts"], {"parents": 3, "children": 0})
-        self.assertEqual(root["attention"]["pending"], 3, "two cards on c2 plus c1 in review")
+        self.assertEqual(root["attention"]["pending"], 1, "only c1's review")
         self.assertEqual(root["attention"]["state"], "needs_you")
         first = root["attention"]["first"]
-        self.assertEqual((first["kind"], first["action_id"], first["task_id"], first["task_title"], first["title"], first["explanation"]),
-                         ("card", older["id"], "c2", "Choose a date", "Choose a date", "Both free."))
+        self.assertEqual((first["kind"], first["task_id"], first["title"]), ("review", "c1", "Review: Shortlist two venues"))
         c1 = by_id["c1"]
         self.assertEqual((c1["parent_id"], c1["children"], c1["attention"]["pending"], c1["attention"]["state"]), ("r1", [], 1, "needs_you"))
-        self.assertEqual(c1["attention"]["first"]["kind"], "review")
-        self.assertEqual(c1["attention"]["first"]["title"], "Review: Shortlist two venues")
         self.assertEqual(c1["attention"]["first"]["summary"], "Two venues shortlisted.")
         self.assertEqual(c1["review"]["artifacts"], ["venues.md"])
         c2 = by_id["c2"]
-        self.assertEqual((c2["block_reason"], c2["attention"]["pending"], c2["attention"]["state"]), ("Choose a date", 2, "needs_you"))
+        # A worker's question is its needs_input block: needs you, with the question as the block reason.
+        self.assertEqual((c2["block_reason"], c2["attention"]), ("Choose a date", {"state": "needs_you", "pending": 0, "first": None}))
         c3 = by_id["c3"]
         self.assertEqual((c3["waits_on"], c3["attention"]["state"]), (["c2"], "waiting"))
         self.assertEqual(by_id["t_free"]["attention"], {"state": "not_started", "pending": 0, "first": None})
-        self.assertEqual([a["action_id"] for a in out["actions"]], [newer["id"], older["id"]], "answered cards are not listed")
         self.assertNotIn("archived", {t["status"] for t in out["tasks"]})
 
     def test_archived_tasks_only_when_asked(self):
         board = FakeBoard([FakeBoard.task_row("a", "archived"), FakeBoard.task_row("b", "todo", assignee="friday")])
-        shown = tasks.compose_board(board="default", tasks=board.tasks(True), events_by_task={}, links=[], actions=[], latest_event_id=0)
+        shown = tasks.compose_board(board="default", tasks=board.tasks(True), events_by_task={}, links=[], latest_event_id=0)
         self.assertEqual([t["id"] for t in shown["tasks"]], ["b"])
         self.assertEqual(shown["assignees"], ["friday"])
-        both = tasks.compose_board(board="default", tasks=board.tasks(True), events_by_task={}, links=[], actions=[],
+        both = tasks.compose_board(board="default", tasks=board.tasks(True), events_by_task={}, links=[],
                                    latest_event_id=0, include_archived=True)
         self.assertEqual({t["id"]: t["attention"]["state"] for t in both["tasks"]}, {"a": "archived", "b": "not_started"})
 
     def test_follow_up_table(self):
         plan = tasks.follow_up_plan
-        self.assertEqual(plan("todo", decomposed=True, unsatisfied=[], card_open=False), ("coordinate", None))
-        self.assertEqual(plan("todo", decomposed=False, unsatisfied=[], card_open=False), ("promote", None))
-        self.assertEqual(plan("triage", decomposed=False, unsatisfied=[], card_open=False), ("release_triage", None))
-        self.assertEqual(plan("todo", decomposed=False, unsatisfied=[("c2", "blocked")], card_open=False), ("waiting", "Waits on c2 (blocked)."))
+        self.assertEqual(plan("todo", decomposed=True, unsatisfied=[]), ("coordinate", None))
+        self.assertEqual(plan("todo", decomposed=False, unsatisfied=[]), ("promote", None))
+        self.assertEqual(plan("triage", decomposed=False, unsatisfied=[]), ("release_triage", None))
+        self.assertEqual(plan("todo", decomposed=False, unsatisfied=[("c2", "blocked")]), ("waiting", "Waits on c2 (blocked)."))
         for status in ("ready", "running", "scheduled"):
-            self.assertEqual(plan(status, decomposed=False, unsatisfied=[], card_open=False), ("none", None))
-        self.assertEqual(plan("blocked", decomposed=False, unsatisfied=[], card_open=True), ("none", "The decision above still needs you."))
-        self.assertEqual(plan("blocked", decomposed=False, unsatisfied=[], card_open=False), ("unblock", None))
-        self.assertEqual(plan("review", decomposed=False, unsatisfied=[], card_open=False), ("reopen_review", None))
-        self.assertEqual(plan("done", decomposed=False, unsatisfied=[], card_open=False), ("reopen_done", None))
+            self.assertEqual(plan(status, decomposed=False, unsatisfied=[]), ("none", None))
+        self.assertEqual(plan("blocked", decomposed=False, unsatisfied=[]), ("unblock", None))
+        self.assertEqual(plan("review", decomposed=False, unsatisfied=[]), ("reopen_review", None))
+        self.assertEqual(plan("done", decomposed=False, unsatisfied=[]), ("reopen_done", None))
 
     def test_instruction_text(self):
         board = family_board()
@@ -436,19 +425,40 @@ class DerivationTests(unittest.TestCase):
                                      "assignee": None, "waits_on": []})
         self.assertEqual(family[3]["waits_on"], ["c2"])
         text = tasks.coordination_instruction(board="default", root=board.task("r1"), comment="Make it Friday instead.",
-                                              family=family, open_cards=[{"task_id": "c2", "title": "Choose a date", "action_id": "a" * 32}])
+                                              family=family)
         for needle in ("r1", "Plan the night out", "board default", "Make it Friday instead.", "c2 · Choose a date · blocked · blocked: needs_input",
-                       "c3 · Book the table · todo · waits for c2", f"(card {'a' * 32})", "review the root and every step together",
+                       "c3 · Book the table · todo · waits for c2", "review the root and every step together",
                        "hermes_task_adjust", "restart:", "redo:", "drop:", "link / unlink", "kanban_create", "don't ask the person first",
-                       "withdraws its card", "hermes_card_selection on the root (task_id r1)", "Never send messages or spend money",
+                       "Never answer a step's question for the person",
+                       'ask in one kanban_comment on the root (r1)', "the question in words", "Don't block the root",
+                       "Never send messages or spend money",
                        "at least one step must be ready or running", "saying what you changed and why",
                        "A comment alone wakes nothing"):
             self.assertIn(needle, text)
+        for gone in ("hermes_card", "Open decision cards", "withdraws its card"):
+            self.assertNotIn(gone, text, "no cards on Kanban tasks (2026-10-23)")
 
-    def test_response_comment_carries_the_block(self):
-        body = tasks.response_comment("a" * 32, {"selected": ["thu"]}, ["Thursday 19:00"])
-        self.assertTrue(body.startswith("Thursday 19:00\n\n```hermes-card-response\n"))
-        self.assertEqual(cards.parse_response_block(body), {"card_id": "a" * 32, "values": {"selected": ["thu"]}})
+    def test_block_question_writes_the_card_out_in_words(self):
+        choice = cards.render("selection", {"title": "Choose a date", "description": "Both venues are free then.", "mode": "single",
+                                            "options": [{"id": "thu", "label": "Thursday 19:00", "recommended": True},
+                                                        {"id": "fri", "label": "Friday 19:00", "detail": "Quieter room"}]})
+        self.assertEqual(tasks.block_question(choice),
+                         "Choose a date\nBoth venues are free then.\n\nPick one:\n1. Thursday 19:00 (recommended)\n"
+                         "2. Friday 19:00: Quieter room\n\nReply with your choice, or tell me what you'd rather do.")
+        draft = cards.render("message", EXAMPLES["message"])
+        text = tasks.block_question(draft)
+        for needle in ("Send this to Morgan?", "Channel: email", "From: mark@example.com", "To: Morgan Goh <morgan@example.com>",
+                       "Subject: Thursday pickup", EXAMPLES["message"]["body"]):
+            self.assertIn(needle, text)
+        self.assertTrue(text.endswith("\n\nReply send, or tell me what to change."))
+        form = cards.render("form", {"title": "Approve the hotel", "submit_label": "Approve", "fields": [
+            {"id": "hotel", "kind": "select", "label": "Hotel", "required": True,
+             "options": [{"id": "inn", "label": "Inn"}, {"id": "pow", "label": "Prince of Wales"}]},
+            {"id": "budget", "kind": "decimal", "label": "Budget", "help_text": "Per night"}]})
+        self.assertEqual(tasks.block_question(form), "Approve the hotel\n\nPlease answer:\n- Hotel (required): Inn / Prince of Wales\n"
+                                                     "- Budget (Per night)\n\nReply with your answers.")
+        many = cards.render("selection", {"title": "Which venues?", "mode": "multiple", "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}]})
+        self.assertIn("Pick one or more:\n1. A\n2. B", tasks.block_question(many))
 
 
 class RouteBodyTests(unittest.TestCase):
@@ -462,35 +472,22 @@ class RouteBodyTests(unittest.TestCase):
     def comment(self, board, task_id, text="Make it shorter", **extra):
         return tasks.comment_on_task(board, self.log, task_id, {"text": text, "author": "mark", **extra})
 
-    def test_approval_survives_new_worker_and_parent_child_handoff(self):
+    def test_a_worker_gets_no_saved_card_context(self):
+        # The saved-decisions context restored task-bound card answers (removed 2026-10-23); a worker now reads the
+        # task's comments, where every answer is.
         board = family_board()
         card = cards.render("message", EXAMPLES["message"])
         self.log.record(card, profile="friday", session_id="old-worker")
         action = self.log.bind_task(card, profile="friday", board=board.slug, task_id="r1")
-        answer = {"selected": ["send"], "edited": True, "body": "Use my exact edited text.", "subject": "Edited subject"}
-        code, result = tasks.answer_action(lambda _: board, self.log, card["id"], {
-            "payload_hash": action["payload_hash"], "answer": answer, "readable": ["Approved with edits"]})
-        self.assertEqual(code, 200)
-        comment = board.comment("r1", result["comment_id"])["body"]
-        for value in (card["data"]["body"], card["data"]["subject"], *card["data"]["to"]):
-            self.assertIn(value, comment)
-        self.assertEqual(cards.parse_response_block(comment)["values"], answer)
-        self.assertEqual(cards.cards_in(comment), [], "Historical approval must not render another card")
-        # Child has a fresh session and receives the original root's exact decision.
+        self.log.answer(card["id"], action["payload_hash"], {"selected": ["send"]}, "mark")
         with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "c2"}), \
              patch.object(plugin, "_DECISIONS", self.log), patch.object(tasks, "HermesBoard", return_value=board):
-            context = plugin.on_pre_llm_call(session_id="new-worker", user_message="Resume task")["context"]
-        payload = json.loads(context.split("\n", 1)[1])
-        self.assertEqual(payload[0]["card"], card)
-        self.assertEqual(payload[0]["answer"], answer)
-        self.assertIn("never resend", context)
-        self.assertEqual(tasks.worker_decision_context(board, self.log, "t_free"), "")
-        other_board = family_board(slug="other")
-        self.assertEqual(tasks.worker_decision_context(other_board, self.log, "c2"), "")
+            self.assertIsNone(plugin.on_pre_llm_call(session_id="new-worker", user_message="Resume task"))
+        self.assertFalse(hasattr(tasks, "worker_decision_context"))
 
     def test_external_wait_is_not_another_request_for_review(self):
         board = FakeBoard([FakeBoard.task_row("c2", "running", current_run_id=12)])
-        handler = plugin._wait_handler(decisions=self.log)
+        handler = plugin._wait_handler()
         with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "c2", "HERMES_KANBAN_RUN_ID": "12"}), \
              patch.object(tasks, "HermesBoard", return_value=board):
             self.assertEqual(json.loads(handler({"reason": "Waiting for recipient confirmation; sent receipt 123"}))["status"], "waiting")
@@ -524,16 +521,16 @@ class RouteBodyTests(unittest.TestCase):
         _, result = self.comment(board, "c2", "Thanks")
         self.assertEqual((result["status"], result["follow_up"]), ("scheduled", "none"))
 
-    def test_wait_cannot_hide_open_decision_or_change_a_newer_run(self):
+    def test_wait_ignores_an_old_card_but_never_changes_a_newer_run(self):
         board = FakeBoard([FakeBoard.task_row("c2", "running", current_run_id=12)])
         card = selection()
         self.log.record(card, profile="friday", session_id="old")
-        action = self.log.bind_task(card, profile="friday", board="default", task_id="c2")
-        self.assertEqual(tasks.wait_for_external_reply(board, self.log, "c2", 12, "Reply")["error"], "decision_pending")
-        self.log.answer(card["id"], action["payload_hash"], {"selected": ["thu"]}, "mark")
-        self.assertEqual(tasks.wait_for_external_reply(board, self.log, "c2", 11, "Reply")["error"], "stale_run")
+        self.log.bind_task(card, profile="friday", board="default", task_id="c2")
+        self.assertEqual(tasks.wait_for_external_reply(board, "c2", 11, "Reply")["error"], "stale_run")
         self.assertEqual(board.task("c2")["status"], "running")
-        handler = plugin._wait_handler(decisions=self.log)
+        self.assertEqual(tasks.wait_for_external_reply(board, "c2", 12, "Reply")["status"], "waiting",
+                         "a card bound before 2026-10-23 no longer holds the worker")
+        handler = plugin._wait_handler()
         with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "", "HERMES_KANBAN_RUN_ID": ""}):
             self.assertEqual(json.loads(handler({"reason": "Reply"}))["error"], "worker_required")
 
@@ -645,80 +642,42 @@ class RouteBodyTests(unittest.TestCase):
         status, leaf = self.comment(board, "r1", text="Thanks.")
         self.assertEqual((leaf["route"], leaf["follow_up"], leaf["status"]), ("leaf", "ready", "ready"))
 
-    def test_answer_resumes_loop_escalated_triage_without_changing_the_brief(self):
-        for waiting in (False, True):
-            with self.subTest(waiting=waiting):
-                tid = "waiting" if waiting else "free"
-                original = FakeBoard.task_row(tid, "triage", "Keep this title", body="Keep this brief",
-                                             assignee="friday", block_kind="needs_input")
-                board = FakeBoard([original.copy(), FakeBoard.task_row("parent", "running")],
-                                  events={tid: [{"kind": "block_loop_detected", "payload": {"kind": "needs_input"}}]},
-                                  links=[("parent", tid)] if waiting else [])
-                card = selection(title=tid)
-                self.log.record(card, profile="friday", session_id="s1")
-                action = self.log.bind_task(card, profile="friday", board="default", task_id=tid)
-                body = {"payload_hash": action["payload_hash"], "answer": {"selected": ["thu"]}, "author": "mark"}
-                status, out = tasks.answer_action(lambda slug: board, self.log, card["id"], body)
-                self.assertEqual((status, out["task_status"]), (200, "todo" if waiting else "ready"))
-                self.assertNotIn("detail", out)
-                self.assertEqual(board.calls, [("add_comment", tid, "mark"), ("release_triage", tid, "mark")])
-                for key in ("title", "body", "assignee"):
-                    self.assertEqual(board.task(tid)[key], original[key])
-                self.assertFalse(tasks.loop_escalated(board.events()[tid]))
-                self.assertEqual(tasks.answer_action(lambda slug: board, self.log, card["id"], body)[0], 409)
-                self.assertEqual(len(board._comments[tid]), 1, "retry neither duplicates approval nor resumes twice")
-
-    def test_answers_do_not_release_unrelated_triage_or_disturb_other_states(self):
-        for status in ("triage", "scheduled", "running", "ready", "done", "archived"):
-            with self.subTest(status=status):
-                board = FakeBoard([FakeBoard.task_row(status, status, block_kind="needs_input")])
-                card = selection(title=status)
-                self.log.record(card, profile="friday", session_id="s1")
-                action = self.log.bind_task(card, profile="friday", board="default", task_id=status)
-                _, out = tasks.answer_action(lambda slug: board, self.log, card["id"],
-                                            {"payload_hash": action["payload_hash"], "answer": {"selected": ["thu"]}})
-                self.assertEqual(out["task_status"], status)
-                self.assertEqual([c[0] for c in board.calls], ["add_comment"])
-                self.assertEqual("detail" in out, status == "triage")
-
-    def test_answer_reports_resume_refusal_and_keeps_the_accepted_answer(self):
-        for status, method in (("blocked", "unblock"), ("triage", "release_triage")):
-            with self.subTest(status=status):
-                board = FakeBoard([FakeBoard.task_row(status, status, block_kind="needs_input")],
-                                  events={status: [{"kind": "block_loop_detected", "payload": None}]})
-                card = selection(title=status)
-                self.log.record(card, profile="friday", session_id="s1")
-                action = self.log.bind_task(card, profile="friday", board="default", task_id=status)
-                with patch.object(board, method, return_value=False):
-                    code, out = tasks.answer_action(lambda slug: board, self.log, card["id"],
-                                                   {"payload_hash": action["payload_hash"], "answer": {"selected": ["thu"]}})
-                self.assertEqual((code, out["state"], out["task_status"]), (200, "answered", status))
-                self.assertIn("did not resume", out["detail"])
-                self.assertEqual(self.log.action(card["id"])["answer_comment_id"], 100)
-                self.assertTrue(board.closed)
-
-    def test_answer_route_body(self):
+    def test_the_answers_route_is_gone(self):
+        # Old app builds still post card answers; they get 410 and nothing is recorded, posted or moved.
         board = family_board()
         card = selection()
         self.log.record(card, profile="friday", session_id="s1")
         action = self.log.bind_task(card, profile="friday", board="default", task_id="c2", root_id="r1")
-        answer = lambda body, aid=card["id"]: tasks.answer_action(lambda slug: board, self.log, aid, body)  # noqa: E731
-        self.assertEqual(answer({"payload_hash": "nope", "answer": {"selected": ["thu"]}}), (409, {"detail": "stale_action"}))
-        self.assertEqual(answer({}, "0" * 32), (404, {"detail": "not_found"}))
-        self.assertEqual(answer({}, "zz"), (404, {"detail": "not_found"}))
-        status, out = answer({"payload_hash": action["payload_hash"], "answer": {"selected": ["thu"]},
-                              "readable": ["Thursday 19:00"], "author": "mark"})
-        self.assertEqual((status, out), (200, {"state": "answered", "comment_id": 100, "task_status": "ready"}))
-        posted = board._comments["c2"][0]
-        self.assertEqual(posted["author"], "mark")
-        self.assertEqual(cards.parse_response_block(posted["body"]), {"card_id": card["id"], "values": {"selected": ["thu"]}})
-        self.assertTrue(posted["body"].startswith("Thursday 19:00\n"))
-        self.assertIn(("unblock", "c2"), board.calls)
-        self.assertEqual(answer({"payload_hash": action["payload_hash"], "answer": {"selected": ["fri"]}}), (409, {"detail": "already_answered"}))
-        self.assertEqual(self.log.action(card["id"])["answer_comment_id"], 100)
+        body = {"payload_hash": action["payload_hash"], "answer": {"selected": ["thu"]}, "readable": ["Thu"], "author": "mark"}
+        for action_id in (card["id"], "0" * 32, "zz"):
+            self.assertEqual(tasks.answer_action(lambda slug: board, self.log, action_id, body), (410, {"detail": "task_cards_removed"}))
+        self.assertEqual((board.calls, board._comments), ([], {}))
+        self.assertEqual(self.log.action(card["id"])["state"], "open", "nothing is answered")
+
+    def test_an_old_open_card_is_ignored_by_the_board_and_the_badge(self):
+        # Cards bound before 2026-10-23 stay in the table but never count: the blocked task needs you through its
+        # block, the root is led by its review, and the alert kind is never "decision".
+        board = family_board()
+        card = selection()
+        self.log.record(card, profile="friday", session_id="s1")
+        self.log.bind_task(card, profile="friday", board="default", task_id="c2", root_id="r1")
         shown = tasks.board_payload(board, self.log)
+        by_id = {t["id"]: t for t in shown["tasks"]}
         self.assertEqual(shown["actions"], [])
-        self.assertEqual({t["id"]: t["attention"]["pending"] for t in shown["tasks"]}["r1"], 1, "only c1's review remains")
+        self.assertEqual(by_id["c2"]["attention"], {"state": "needs_you", "pending": 0, "first": None})
+        self.assertEqual((by_id["r1"]["attention"]["pending"], by_id["r1"]["attention"]["first"]["kind"]), (1, "review"))
+        summary = notify.attention_summary(shown, self.log.open_chat_decisions())
+        self.assertEqual([(t["id"], t["kind"]) for t in summary["tasks"]], [("r1", "review")])
+        self.assertEqual(summary["decisions"], 0, "a bound card is not a chat decision either")
+        # Without the review, the root is led by the subtask's block, not the card.
+        board._tasks["c1"]["status"] = "done"
+        root = next(t for t in tasks.board_payload(board, self.log)["tasks"] if t["id"] == "r1")
+        self.assertEqual((root["attention"]["state"], root["attention"]["first"]), ("needs_you", None))
+        self.assertEqual(root["block_reason"], "Subtask “Choose a date” is blocked: Choose a date")
+        self.assertEqual(notify.request_kind(root), "blocked")
+        # A comment on the task retires the card, never approves it.
+        self.comment(board, "c2", "Thursday works.")
+        self.assertEqual(self.log.action(card["id"])["state"], "withdrawn")
 
 
 class GuardTests(unittest.TestCase):
@@ -735,19 +694,14 @@ class GuardTests(unittest.TestCase):
         return tasks.tool_call_block(tool, args or {}, session_id=session_id, decisions=self.log,
                                      family_reader=self.reader, env=env if env is not None else {})
 
-    def test_worker_waits_for_the_answer(self):
+    def test_worker_finishes_despite_an_old_open_card(self):
         card = selection()
         self.log.record(card, profile="friday", session_id="s1")
-        action = self.log.bind_task(card, profile="friday", board="default", task_id="c2")
+        self.log.bind_task(card, profile="friday", board="default", task_id="c2")
         env = {"HERMES_KANBAN_TASK": "c2"}
-        self.assertEqual(self.block("kanban_complete", {"result": "done"}, env=env),
-                         f"Wait for the person's answer to 'Choose a date' (card {card['id']}) before finishing.")
-        self.assertIsNotNone(self.block("kanban_request_review", {"task_id": "c2"}, env=env))
-        self.assertIsNone(self.block("kanban_comment", {"task_id": "c2", "body": "hi"}, env=env), "commenting is fine")
-        self.assertIsNone(self.block("kanban_complete", {"task_id": "c3"}, env=env), "another task's card is not this one's")
-        self.assertIsNone(self.block("kanban_complete", env={}), "outside a worker nothing is checked")
-        self.log.answer(card["id"], action["payload_hash"], {"selected": ["thu"]}, "mark")
-        self.assertIsNone(self.block("kanban_complete", {"result": "done"}, env=env))
+        self.assertIsNone(self.block("kanban_complete", {"result": "done"}, env=env), "task-bound cards no longer hold a worker")
+        self.assertIsNone(self.block("kanban_request_review", {"task_id": "c2"}, env=env))
+        self.assertIsNone(self.block("kanban_block", {"kind": "needs_input", "reason": "Which date?"}, env=env))
         self.assertIsNone(self.block("terminal", {"command": "ls"}, env=env))
 
     def test_coordinator_stays_in_the_family(self):
@@ -788,44 +742,53 @@ class PluginHookTests(unittest.TestCase):
     def tearDown(self):
         self.temp.cleanup()
 
-    def test_worker_card_is_bound_and_parks_the_task(self):
+    def test_worker_selection_is_not_shown_and_asks_in_words(self):
         handler = self.ctx.tools["hermes_card_selection"][1]
         with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "c2", "HERMES_KANBAN_BOARD": "default", "HERMES_KANBAN_RUN_ID": "12"}):
-            result = json.loads(handler({"title": "Choose a date", "mode": "single",
-                                         "options": [{"id": "thu", "label": "Thu"}, {"id": "fri", "label": "Fri"}]}, session_id="w1"))
-            self.assertEqual((result["action_id"], result["task_id"]), (result["card_id"], "c2"))
-            self.assertIn('kanban_block(kind="needs_input", reason="Choose a date")', result["next_step"])
+            result = json.loads(handler({"title": "Choose a date", "mode": "single", "description": "Both venues are free.",
+                                         "options": [{"id": "thu", "label": "Thursday 19:00", "recommended": True},
+                                                     {"id": "fri", "label": "Friday 19:00"}]}, session_id="w1"))
+            self.assertEqual((result["shown"], result["task_id"]), (False, "c2"))
+            self.assertNotIn("card_id", result)
+            self.assertEqual(result["block_reason"], "Choose a date\nBoth venues are free.\n\nPick one:\n1. Thursday 19:00 (recommended)\n"
+                                                     "2. Friday 19:00\n\nReply with your choice, or tell me what you'd rather do.")
+            for needle in ("Cards aren't shown on Kanban tasks", 'kanban_block(kind="needs_input", reason=<block_reason, verbatim>)',
+                           "and stop", "comment on the task"):
+                self.assertIn(needle, result["next_step"])
+            self.assertIsNone(self.ctx.hooks["transform_llm_output"](response_text="Blocked on the date.", session_id="w1",
+                                                                     platform="cli"), "nothing is attached to the reply")
             plain = json.loads(self.ctx.tools["hermes_card_metrics"][1](EXAMPLES["metrics"], session_id="w1"))
-            self.assertNotIn("next_step", plain, "only decisions bind")
-            self.assertEqual(self.ctx.hooks["pre_tool_call"](tool_name="kanban_complete", args={}, session_id="w1"),
-                             {"action": "block", "message": f"Wait for the person's answer to 'Choose a date' (card {result['card_id']}) before finishing."})
+            self.assertIn("card_id", plain, "display-only cards in a worker are unchanged")
+            self.assertNotIn("next_step", plain)
+            self.assertIsNone(self.ctx.hooks["pre_tool_call"](tool_name="kanban_complete", args={}, session_id="w1"))
             self.assertIsNone(self.ctx.hooks["pre_tool_call"](tool_name="kanban_heartbeat", args={}, session_id="w1"))
-        actions = plugin._DECISIONS.open_task_actions("default")
-        self.assertEqual([(a["task_id"], a["run_id"], a["kind"]) for a in actions], [("c2", 12, "question")])
+        self.assertEqual(plugin._DECISIONS.open_task_actions("default"), [], "nothing is bound")
+        self.assertEqual(plugin._DECISIONS.open(profile="friday"), [], "and nothing waits in the worker's session")
         chat = json.loads(handler({"title": "Chat question", "mode": "single", "options": [{"id": "a", "label": "A"}]}, session_id="s1"))
+        self.assertIn("card_id", chat, "chat cards are unchanged")
         self.assertNotIn("next_step", chat)
         self.assertEqual(len(plugin._DECISIONS.open(profile="friday")), 1)
 
-    def test_worker_form_of_any_shape_is_bound(self):
-        # A worker's multi-field form waited in the worker's own session, which nobody sees (2026-10-20).
+    def test_worker_form_and_draft_ask_in_words(self):
         handler = self.ctx.tools["hermes_card_form"][1]
         form = {"title": "Approve the hotel", "description": "Inn on the Twenty, 1 night.", "submit_label": "Approve",
                 "fields": [{"id": "hotel", "kind": "select", "label": "Hotel", "required": True,
                             "options": [{"id": "inn", "label": "Inn"}, {"id": "pow", "label": "Prince of Wales"}]},
-                           {"id": "room", "kind": "select", "label": "Room", "required": True,
-                            "options": [{"id": "suite", "label": "Suite"}, {"id": "king", "label": "King"}]},
                            {"id": "budget", "kind": "decimal", "label": "Budget", "required": False}]}
         with patch.dict("os.environ", {"HERMES_KANBAN_TASK": "c2", "HERMES_KANBAN_BOARD": "default", "HERMES_KANBAN_RUN_ID": "12"}):
             result = json.loads(handler(form, session_id="w1"))
-        self.assertEqual(result["task_id"], "c2")
-        self.assertIn("kanban_block", result["next_step"])
-        [action] = plugin._DECISIONS.open_task_actions("default")
-        self.assertEqual((action["action_id"], action["kind"], action["explanation"]),
-                         (result["card_id"], "question", "Inn on the Twenty, 1 night."))
-        self.assertEqual([f["id"] for f in action["card"]["data"]["fields"]], ["hotel", "room", "budget"])
+            draft = json.loads(self.ctx.tools["hermes_card_message"][1](EXAMPLES["message"], session_id="w1"))
+        self.assertEqual((result["shown"], result["task_id"]), (False, "c2"))
+        self.assertNotIn("request_id", result, "no form is stored for a worker")
+        self.assertEqual(result["block_reason"], "Approve the hotel\nInn on the Twenty, 1 night.\n\nPlease answer:\n"
+                                                 "- Hotel (required): Inn / Prince of Wales\n- Budget\n\nReply with your answers.")
+        self.assertIn(EXAMPLES["message"]["body"], draft["block_reason"])
+        self.assertTrue(draft["block_reason"].endswith("Reply send, or tell me what to change."))
+        self.assertIn("Send nothing until their comment clearly says to send it", draft["next_step"])
+        self.assertEqual(plugin._DECISIONS.open_task_actions("default"), [])
         chat = json.loads(handler(form, session_id="s1"))
-        self.assertNotIn("next_step", chat, "in a chat the form stays a form")
-        self.assertEqual(plugin._DECISIONS.open(profile="friday"), [])
+        self.assertIn("request_id", chat, "in a chat the form stays a form")
+        self.assertNotIn("next_step", chat)
 
     def test_hook_never_raises(self):
         with patch.object(plugin.tasks, "tool_call_block", side_effect=RuntimeError("boom")):
@@ -833,7 +796,7 @@ class PluginHookTests(unittest.TestCase):
 
 
 class RouterTests(unittest.TestCase):
-    def test_three_routes_against_a_fake_board(self):
+    def test_routes_against_a_fake_board(self):
         try:
             from fastapi import FastAPI
             from fastapi.testclient import TestClient
@@ -856,7 +819,8 @@ class RouterTests(unittest.TestCase):
             base = "/api/plugins/agents-cs"
             shown = client.get(base + "/tasks/board", params={"board": "default"})
             self.assertEqual(shown.status_code, 200)
-            self.assertEqual((shown.json()["capability"], len(shown.json()["actions"])), (tasks.CAPABILITY, 1))
+            self.assertEqual((shown.json()["capability"], shown.json()["actions"]), (tasks.CAPABILITY, []),
+                             "an old bound card is never listed")
             self.assertEqual(client.get(base + "/tasks/board", params={"board": "missing"}).status_code, 404)
             self.assertEqual(client.post(base + "/tasks/zzz/comments", json={"text": "x"}).json(), {"detail": "task_not_found"})
             commented = client.post(base + "/tasks/c3/comments", json={"text": "Hurry", "author": "mark"})
@@ -864,9 +828,8 @@ class RouterTests(unittest.TestCase):
             answered = client.post(base + f"/actions/{card['id']}/answers",
                                    json={"payload_hash": action["payload_hash"], "answer": {"selected": ["fri"]},
                                          "readable": ["Friday"], "author": "mark"})
-            self.assertEqual(answered.json(), {"state": "answered", "comment_id": 100, "task_status": "ready"})
-            self.assertEqual(client.post(base + f"/actions/{card['id']}/answers", json={}).status_code, 409)
-            self.assertEqual(client.get(base + "/tasks/board").json()["actions"], [])
+            self.assertEqual((answered.status_code, answered.json()), (410, {"detail": "task_cards_removed"}))
+            self.assertNotIn("c2", board._comments, "nothing is posted")
 
 
 class LiveBoardLessons(unittest.TestCase):
@@ -881,8 +844,8 @@ class LiveBoardLessons(unittest.TestCase):
         self.assertTrue(tasks.loop_escalated(events))
         self.assertEqual(tasks.block_reason(events), "Which date?")
         task = {"id": "t1", "status": "triage", "block_kind": "needs_input"}
-        self.assertEqual(tasks.attention_state(task, pending=0, has_card=False, waiting=[], child_statuses=[], escalated=True), "needs_you")
-        self.assertEqual(tasks.attention_state(task, pending=0, has_card=False, waiting=[], child_statuses=[]), "not_started")
+        self.assertEqual(tasks.attention_state(task, pending=0, waiting=[], child_statuses=[], escalated=True), "needs_you")
+        self.assertEqual(tasks.attention_state(task, pending=0, waiting=[], child_statuses=[]), "not_started")
         self.assertFalse(tasks.loop_escalated(events + [{"kind": "claimed", "payload": None}]), "a new claim clears it")
 
     def test_child_of_an_archived_root_stands_alone(self):
@@ -891,12 +854,12 @@ class LiveBoardLessons(unittest.TestCase):
         events = {"r": [{"kind": "decomposed", "payload": {"child_ids": ["c"]}}],
                   "c": [{"kind": "created", "payload": {"from_decompose_of": "r"}}]}
         board = tasks.compose_board(board="default", tasks=[root, child], events_by_task=events, links=[("r", "c")],
-                                    actions=[], latest_event_id=1)
+                                    latest_event_id=1)
         rows = {t["id"]: t for t in board["tasks"]}
         self.assertEqual(list(rows), ["c"])
         self.assertIsNone(rows["c"]["parent_id"])
         with_archived = tasks.compose_board(board="default", tasks=[root, child], events_by_task=events, links=[("r", "c")],
-                                            actions=[], latest_event_id=1, include_archived=True)
+                                            latest_event_id=1, include_archived=True)
         rows = {t["id"]: t for t in with_archived["tasks"]}
         self.assertEqual((rows["c"]["parent_id"], rows["r"]["children"]), ("r", ["c"]))
 
@@ -908,7 +871,7 @@ class BlockedSubtaskLessons(unittest.TestCase):
 
     REASON = "Chrome must be fully quit before the browser tool can attach; provider unresolved."
 
-    def board(self, block_kind="capability", *, reason=REASON, actions=(), root_status="todo", second=None):
+    def board(self, block_kind="capability", *, reason=REASON, root_status="todo", second=None):
         rows = [{"id": "r", "status": root_status, "title": "Riverdale Christmas Evite", "assignee": "friday"},
                 {"id": "c_send", "status": "blocked", "block_kind": block_kind, "title": "Send the Evite"},
                 {"id": "c_after", "status": "todo", "title": "Confirm the guest list"}]
@@ -923,7 +886,7 @@ class BlockedSubtaskLessons(unittest.TestCase):
         # The live family's links: the sibling waits on the blocked subtask; the root sits under both.
         links = [("c_send", "c_after"), ("c_send", "r"), ("c_after", "r")]
         payload = tasks.compose_board(board="default", tasks=rows, events_by_task=events, links=links,
-                                      actions=list(actions), latest_event_id=9, now=NOW)
+                                      latest_event_id=9, now=NOW)
         return payload, {t["id"]: t for t in payload["tasks"]}
 
     def test_human_blocked_subtask_puts_its_root_in_review(self):
@@ -952,15 +915,6 @@ class BlockedSubtaskLessons(unittest.TestCase):
         self.assertIsNone(root["block_reason"])
         self.assertNotIn("subtask", root["attention"])
         self.assertEqual(notify.attention_summary(payload, 0)["tasks"], [])
-
-    def test_subtask_with_an_open_card_is_led_by_the_card_not_the_block(self):
-        card = selection("Which browser profile?")
-        action = {"action_id": card["id"], "task_id": "c_send", "title": "Which browser profile?", "explanation": None,
-                  "state": "open", "created_at": NOW - 60, "card": card}
-        _, rows = self.board("needs_input", actions=[action])
-        root = rows["r"]
-        self.assertEqual((root["attention"]["state"], root["attention"]["first"]["kind"]), ("needs_you", "card"))
-        self.assertIsNone(root["block_reason"], "the card is the request; the block line would repeat it")
 
     def test_stuck_subtask_makes_its_root_stuck_and_extra_needs_are_counted(self):
         _, rows = self.board("transient", reason="Browser crashed")
@@ -998,7 +952,7 @@ class OutsideWaitLessons(unittest.TestCase):
                   "c_offer": [{"kind": "created", "payload": {"from_decompose_of": "r"}},
                               {"kind": "scheduled", "payload": {"reason": reason}}]}
         payload = tasks.compose_board(board="default", tasks=rows, events_by_task=events,
-                                      links=[("c_done", "c_offer"), ("c_offer", "r")], actions=[], latest_event_id=9, now=NOW)
+                                      links=[("c_done", "c_offer"), ("c_offer", "r")], latest_event_id=9, now=NOW)
         return payload, {t["id"]: t for t in payload["tasks"]}
 
     def test_cycling_rechecks_of_an_outside_wait_are_not_stuck(self):
@@ -1122,9 +1076,8 @@ class CoordinatorStepLessons(unittest.TestCase):
     def test_no_stall_while_a_step_moves_or_mark_already_has_something(self):
         family = ["research", "copy", "final"]
         by_id = {t["id"]: t for t in self.board.tasks()}
-        kwargs = dict(tasks_by_id=by_id, links=self.board.links(), events_by_task={}, open_card_tasks=set())
+        kwargs = dict(tasks_by_id=by_id, links=self.board.links(), events_by_task={})
         self.assertIsNotNone(tasks.stall_line("r", family, **kwargs))
-        self.assertIsNone(tasks.stall_line("r", family, **{**kwargs, "open_card_tasks": {"final"}}))
         self.assertIsNone(tasks.stall_line("r", family, **{**kwargs, "events_by_task": {"research": [{"kind": "block_loop_detected"}]}}))
         for status in ("ready", "running", "review", "blocked", "scheduled"):
             by_id["final"] = {**by_id["final"], "status": status}

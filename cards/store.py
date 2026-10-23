@@ -7,9 +7,11 @@ writes the pending form from that bot's own process, the app's submission arrive
 dashboard router in ``hermes serve``, and the bot reads the answer back with
 ``hermes_card_form_response``. A form accepts one answer; it stays readable after that.
 
-The same file holds every decision card (``DecisionLog``). A decision made inside a Kanban worker
-is bound to its task (``bind_task``) and becomes an *action* the app answers from the task board
-(docs/TASK_EXPERIENCE_API.md); ``coordinations`` fences an orchestrator session to one root task.
+The same file holds every decision card (``DecisionLog``); ``coordinations`` fences an orchestrator session
+to one root task. Until 2026-10-23 a decision made inside a Kanban worker was bound to its task (``bind_task``)
+and answered from the task board; task-bound cards are gone now (a worker asks in words with ``kanban_block``),
+and the rows already bound stay in the table, ignored by the board, the guard and the alerts
+(docs/TASK_EXPERIENCE_API.md).
 """
 from __future__ import annotations
 
@@ -348,7 +350,7 @@ class DecisionLog(FormStore):
                 (resolve_board(board), current - max_age)).fetchall()
         return {row["task_id"] for row in rows}
 
-    # --- Task-bound cards (actions) ---------------------------------------------------------------
+    # --- Task-bound cards (actions): legacy since 2026-10-23, nothing new is bound ------------------
 
     def bind_task(self, card: dict[str, Any], *, profile: str, board: str | None, task_id: str,
                   root_id: str | None = None, run_id: int | None = None) -> dict[str, Any]:

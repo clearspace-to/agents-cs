@@ -21,12 +21,13 @@ restarts, redoes, drops or reorders its main task's steps), the ``native-cards``
   the bot's own Bot Chat keeps its cards, and the relay ledger (``store.RelayLog``) records which run a
   result came from, for the archiver, the mobile module and the bot itself (it is told the run chat on
   later turns).
-* ``pre_tool_call`` guards Kanban work (``tasks.tool_call_block``): a worker can't finish its task
-  while a card it made waits on the person, and a coordinator session stays inside its root's family.
+* ``pre_tool_call`` guards Kanban work (``tasks.tool_call_block``): a coordinator session stays inside its
+  root's family.
 
-Inside a Kanban worker (``HERMES_KANBAN_TASK`` set) a decision card is bound to that task
-(``DecisionLog.bind_task``) and answered from the app's task board instead of a chat
-(docs/TASK_EXPERIENCE_API.md).
+Inside a Kanban worker (``HERMES_KANBAN_TASK`` set) no card the person would answer is shown (Mark, 2026-10-23):
+the tool result hands the worker the question in words (``tasks.ask_in_words``) to pass to
+``kanban_block(kind="needs_input", reason=…)``, and the person answers with a task comment
+(docs/TASK_EXPERIENCE_API.md). Display-only cards in a worker behave as anywhere else.
 
 With ``card_guard`` on in the profile's plugin settings, an app reply that should have been a card
 but carries none is turned into cards before it is saved (``guard.py``: Jev decides text or card,
@@ -134,20 +135,6 @@ def on_pre_llm_call(session_id: str = "", user_message: Any = None, **_kwargs: A
             _DECISIONS.close_from(user_message, profile=_PROFILE)
         except Exception:  # never let bookkeeping break a turn
             pass
-    task_id = os.environ.get("HERMES_KANBAN_TASK")
-    if task_id and _DECISIONS is not None:
-        board = None
-        try:
-            board = tasks.HermesBoard(os.environ.get("HERMES_KANBAN_BOARD"))
-            context = tasks.worker_decision_context(board, _DECISIONS, task_id)
-            if context:
-                return {"context": context}
-        except Exception:
-            return {"context": "Saved task decisions could not be recovered. Read the task and ancestor "
-                               "comments before acting; missing context is not a reason to request approval again."}
-        finally:
-            if board is not None:
-                board.close()
     return None
 
 
@@ -288,17 +275,16 @@ def _render_handler(card_type: str, *, store: FormStore, profile: str, attached:
         try:
             card = cards.render(card_type, args)
             session_id = str(kwargs.get("session_id") or "")
+            task_id = os.environ.get("HERMES_KANBAN_TASK")
+            if task_id and cards.wants_answer(card):
+                # No cards on Kanban tasks (Mark, 2026-10-23): nobody sees a worker's own session, and the task
+                # board no longer draws bound cards. Nothing is recorded or shown; the worker asks in words.
+                return json.dumps(tasks.ask_in_words(card, task_id), ensure_ascii=False)
             if card_type == "form":
                 store.create(card, profile=profile, session_id=session_id)
             if decisions is not None:
                 card["id"] = decisions.record(card, profile=profile, session_id=session_id)
             result = cards.delivery(card, attached=attached)
-            task_id = os.environ.get("HERMES_KANBAN_TASK")
-            if task_id and decisions is not None and cards.wants_answer(card):
-                # A worker's question is answered from the task board, not a chat: bind it and have the
-                # worker park the task until the answer lands as a comment (Mark, 2026-10-05). Every form,
-                # not only one-menu ones: an unbound form waits in a session nobody sees (2026-10-20).
-                result.update(_bind(decisions, card, profile=profile, task_id=task_id))
             if attached:
                 _remember(session_id, card)
             return json.dumps(result, ensure_ascii=False)
@@ -306,20 +292,6 @@ def _render_handler(card_type: str, *, store: FormStore, profile: str, attached:
             return json.dumps({"error": error.code, "message": str(error),
                                "hint": "Fix the arguments and call the tool again, or answer in text."})
     return handle
-
-
-def _bind(decisions: DecisionLog, card: dict[str, Any], *, profile: str, task_id: str) -> dict[str, Any]:
-    run_id = os.environ.get("HERMES_KANBAN_RUN_ID")
-    action = decisions.bind_task(card, profile=profile, board=os.environ.get("HERMES_KANBAN_BOARD") or None,
-                                 task_id=task_id, run_id=int(run_id) if run_id and run_id.isdigit() else None)
-    return {
-        "action_id": action["action_id"], "task_id": task_id,
-        "next_step": (f"This card is bound to Kanban task {task_id}; the person answers it from the task board. "
-                      f"Now call kanban_block(kind=\"needs_input\", reason={json.dumps(card['title'], ensure_ascii=False)}) "
-                      "and stop. The answer arrives as a comment on the task carrying a "
-                      f"{cards.RESPONSE_FENCE} block with card_id {action['action_id']}; Hermes wakes you when it lands. "
-                      "If you change the draft before then, show a new card: the old one is withdrawn."),
-    }
 
 
 def on_pre_tool_call(tool_name: str = "", args: Any = None, session_id: str = "", **_kwargs: Any) -> dict[str, Any] | None:
@@ -369,8 +341,9 @@ def on_post_tool_call(**kwargs: Any) -> None:
 
 def on_kanban_task_blocked(task_id: str = "", board: Any = None, assignee: Any = None, reason: Any = None,
                            profile_name: str = "", **_kwargs: Any) -> None:
-    """A worker (or Hermes's breaker) blocked a task. A human block rings the phone: a bound card is a
-    decision, anything else a question in the block reason. Other block kinds only refresh the badge."""
+    """A worker (or Hermes's breaker) blocked a task. A human block rings the phone as kind ``blocked``, the
+    question in the block reason (never ``decision``: task-bound cards were removed, 2026-10-23). Other block
+    kinds only refresh the badge."""
     if task_id:
         _notify_in_background(board, task_id, "blocked", bot=assignee or profile_name,
                               reason=reason if isinstance(reason, str) else None)
@@ -404,7 +377,7 @@ def _notify_in_background(board: Any, task_id: str | None, what: str, *, bot: An
             if task_id and what in ("blocked", "review"):
                 task = opened.task(task_id) or {}
                 if what == "review" or task.get("block_kind") in tasks.HUMAN_BLOCKS:
-                    kind = "review" if what == "review" else ("decision" if decisions.open_task_cards(task_id) else "blocked")
+                    kind = "review" if what == "review" else "blocked"
                     notify.task_event("requested", board=opened.slug, task_id=task_id, title=task.get("title"),
                                       bot=task.get("assignee") or (bot if isinstance(bot, str) else None), kind=kind, reason=reason)
             tasks.attention_after(opened, decisions, task_id if what == "resolved" else None, force=what != "tick")
@@ -430,7 +403,7 @@ def _response_handler(*, store: FormStore, profile: str):
     return handle
 
 
-def _wait_handler(*, decisions: DecisionLog):
+def _wait_handler():
     def handle(args: Any, **_kwargs: Any) -> str:
         task_id = os.environ.get("HERMES_KANBAN_TASK", "")
         run_id = os.environ.get("HERMES_KANBAN_RUN_ID", "")
@@ -442,7 +415,7 @@ def _wait_handler(*, decisions: DecisionLog):
         board = None
         try:
             board = tasks.HermesBoard(os.environ.get("HERMES_KANBAN_BOARD"))
-            return json.dumps(tasks.wait_for_external_reply(board, decisions, task_id, int(run_id), reason.strip()))
+            return json.dumps(tasks.wait_for_external_reply(board, task_id, int(run_id), reason.strip()))
         except Exception:
             return json.dumps({"error": "wait_failed", "message": "Could not park the task; read its current state before retrying."})
         finally:
@@ -620,7 +593,7 @@ def register(ctx: Any) -> None:
                                "This is not a request for Mark's approval. Does not send messages, set a timer or poll. "
                                "Never use for a missing user decision, failed tool or unfinished work you can do now.",
                 "parameters": _obj({"reason": _text(2000)}, ["reason"])},
-        handler=_wait_handler(decisions=_DECISIONS), description="Wait for an external reply", emoji="🕓")
+        handler=_wait_handler(), description="Wait for an external reply", emoji="🕓")
     ctx.register_tool(name="hermes_task_adjust", toolset=TOOLSET, schema=ADJUST_SCHEMA,
                       handler=_adjust_handler(decisions=_DECISIONS), description="Change a coordinated task's steps",
                       emoji="🔀")

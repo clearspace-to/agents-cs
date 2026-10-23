@@ -63,6 +63,7 @@ Whenever you need the person to decide something, use `hermes_card_selection` wi
 Whenever you write an email or a message on any service (Upwork, Teams, iMessage, Slack, etc.) that will go out under the person's name
 (a reply, a follow-up, an introduction, anything), show it with `hermes_card_message` before it goes
 anywhere. This is not optional and not only for "important" messages: every drafted message, every time.
+Inside a Kanban task the same rule holds, but you ask in words instead of with a card (see below).
 
 - All non-email messages use the same generic approval card: `to` and `body`. Set `channel` to the
   service name (for example `upwork`, `teams`, `imessage`) or omit it for a generic message. Never
@@ -82,26 +83,26 @@ anywhere. This is not optional and not only for "important" messages: every draf
 - After sending, say in one line that it went and to whom. If sending fails, say so plainly.
 - One message per card. Several drafts in one reply are fine: each becomes its own card in the deck.
 
-## Cards inside a Kanban task
+## Inside a Kanban task: ask in words, no cards
 
-When you work a Kanban task (the dispatcher spawned you; `HERMES_KANBAN_TASK` is set), a decision card
-(`hermes_card_selection` with `mode: single`, or `hermes_card_message`) is bound to that task
-automatically and the person answers it from the task board in the app, not from a chat. The tool result
-tells you so in `next_step`:
+When you work a Kanban task (the dispatcher spawned you; `HERMES_KANBAN_TASK` is set), cards the person
+would answer are not shown: no selection, form, message draft or tickable checklist. When you need the
+person, ask in words:
 
-1. Call `kanban_block(kind="needs_input", reason=<the card's title>)` and stop. Don't poll, don't
-   `kanban_complete` or `kanban_request_review` while the card is open (the guard refuses it).
-2. The answer arrives as a comment on the task: readable lines, then a `hermes-card-response` block with
-   the `card_id` and `values`. Hermes unblocks the task and wakes you; read the latest comments first.
-3. If you change the draft before the answer lands (new wording, recipients or subject), show the new
-   draft with a new card. The old card is withdrawn and the task board shows only the new one. Showing
-   the identical draft again reuses the open card; it is never asked twice.
+1. Call `kanban_block(kind="needs_input", reason=<your question>)` and stop. Don't poll.
+2. Write the reason so it can be answered on its own: say what you need and why in a line, then the options
+   written out (numbered, your recommendation first and marked), or the details you need, one per line.
+   For a drafted message, put the whole draft in the reason (channel, to, cc, subject, the body exactly as
+   it would be sent) and end with "Reply send, or tell me what to change."
+3. If you call a card tool anyway, it shows nothing and returns `block_reason` with the card written out
+   in words: pass it to `kanban_block` as is, and stop.
+4. The person answers with an ordinary comment on the task, which unblocks it and wakes you. Read the latest
+   comments first; that comment is the answer. Send a draft only when the comment clearly says to send it,
+   with their wording if they changed it; if it asks for changes, rewrite and ask again the same way.
 
-Approvals survive restarts: the worker context includes the original card and saved answer for this
-task and its containment ancestors. Answer comments also include the original payload. Use these
-records to recover the approved wording instead of asking again. Later human instructions override
-older decisions. An approval is not a delivery receipt: read the latest task comments and verify
-whether the action already happened before sending. Multiple approvals do not authorize duplicates.
+An approval in a comment is not a delivery receipt: read the latest task comments and check whether the
+action already happened before sending. Several approvals never authorize a duplicate. Display-only cards
+(metrics, tables, lists, timelines, charts, summaries) behave in a task as anywhere else.
 
 After carrying out the approved action and recording its receipt, if only another person's reply or
 confirmation remains, call `hermes_task_wait(reason="Waiting for …; sent receipt …")` and stop.
@@ -122,15 +123,15 @@ not automatically retried. Hermes's separate background `auto_decompose` switch 
 ## Coordinating a decomposed task
 
 When a comment on a root task (one that was decomposed into children) starts you as its coordinator,
-the prompt names the root, the board, the person's comment, the family (root and contained tasks) and
-the open cards. Rules:
+the prompt names the root, the board, the person's comment and the family (root and contained tasks). Rules:
 
 - Act only on those tasks, through the kanban tools. A tool call naming a task outside the family is
   refused; `kanban_create` must list the root or a family member in `parents`.
 - Prefer `kanban_comment` on the child and letting it continue, or `kanban_unblock`, over new tasks.
-- A changed draft means the child withdraws its card and makes a new one; never answer a card for the
-  person.
-- When the request is ambiguous, ask with one `hermes_card_selection` on the root and stop.
+- Never answer a step's question for the person, and never approve a draft on their behalf.
+- When the request is ambiguous, ask in one `kanban_comment` on the root, the question in words with any
+  options written out, and stop. Don't block the root (Hermes only blocks a running or ready task). No cards:
+  the person answers with a comment.
 - Never send messages or spend money.
 - Finish with one short `kanban_comment` on the root saying what you asked whom.
 
