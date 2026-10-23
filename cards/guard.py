@@ -13,7 +13,7 @@ profile, every app reply that carries no card goes through two steps:
 Fail-open throughout: any error, timeout or invalid card leaves the reply as written. Settings
 (``plugins.entries.agents-cs.settings`` in the profile's config.yaml)::
 
-    card_guard: "on"        # "on", "shadow" (decide and log only) or "off" (default)
+    card_guard: "on"        # "on", "drafts" (only rescue outbound drafts), "shadow" (decide and log only) or "off" (default)
     card_guard_key_file: /path/to/openrouter-key   # optional; defaults to routing's key (routing_key_file, else the Jev key)
 
 Each decision is logged without content (labels, confidences, timings, card types) to
@@ -84,7 +84,12 @@ def _settings() -> dict[str, Any]:
 
 def mode() -> str:
     value = str(_settings().get("card_guard", "off")).lower()
-    return value if value in {"on", "shadow"} else "off"
+    return value if value in {"on", "drafts", "shadow"} else "off"
+
+
+# In ``drafts`` mode the guard only rescues a drafted message that lacks its approval card (Mark, 2026-10-23:
+# fewer cards; questions may stay in prose). Only these card types are built from the plan then.
+DRAFT_CARD_TYPES = ("message",)
 
 
 def _hermes_home() -> Path:
@@ -166,12 +171,13 @@ def convert(reply: str, decision: dict[str, Any], *, parameters: Callable[[str],
     return _json_object(_response_text(response))
 
 
-def build(plan: dict[str, Any], reply: str) -> tuple[list[dict[str, Any]], str]:
+def build(plan: dict[str, Any], reply: str, *, allowed: tuple[str, ...] = CARD_TYPES) -> tuple[list[dict[str, Any]], str]:
     """Validate the converter's plan into card envelopes and the trimmed reply. Invalid cards are
-    dropped; a passage is removed only if it appears in the reply exactly and leaves text behind."""
+    dropped, as is any card whose type is not in ``allowed``; a passage is removed only if it appears
+    in the reply exactly and leaves text behind."""
     made: list[dict[str, Any]] = []
     for item in (plan.get("cards") or [])[:MAX_CARDS]:
-        if not isinstance(item, dict) or item.get("type") not in CARD_TYPES:
+        if not isinstance(item, dict) or item.get("type") not in allowed:
             continue
         try:
             made.append(cards.render(item["type"], item.get("args")))
@@ -217,9 +223,13 @@ def run(reply: str, *, parameters: Callable[[str], dict[str, Any]], user_message
         if not needs_card(decision):
             entry["result"] = "text"
             return None
+        if current_mode == "drafts" and decision["kind"] != "draft":
+            # Questions and structure stay as written; only a drafted message gets its approval card.
+            entry["result"] = "not_draft"
+            return None
         started = time.monotonic()
         plan = convert(reply, decision, parameters=parameters, user_message=user_message, llm=llm)
-        made, text = build(plan, reply)
+        made, text = build(plan, reply, allowed=DRAFT_CARD_TYPES if current_mode == "drafts" else CARD_TYPES)
         entry.update(convert_ms=int((time.monotonic() - started) * 1000),
                      cards=[card["type"] for card in made], removed_chars=len(reply) - len(text))
         if not made:
