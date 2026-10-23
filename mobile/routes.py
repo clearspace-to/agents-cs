@@ -5,6 +5,8 @@ Hermes's own dashboard authentication (never expose it as a standalone API):
     PUT  mobile/reads            {profile, chat, unread, through?}: a device read a chat, or marked it unread
     GET  mobile/replies?profile= the newest person-facing reply id per chat (identities only, no text)
     GET  mobile/kinds?profile=&session=   which Show in Chats switch each message of a chat belongs to
+    GET  mobile/history?profile=&session=&tail=[&since=][&before=][&after=]   a window of the chat's transcript in
+                                 session.history's row shape, with its kinds (history.py)
     PUT  mobile/view             {groups, bots}: this device's inbox filter (its badge counts only those)
     GET  mobile/usage?period=    API usage reports (usage.py)
 
@@ -19,10 +21,11 @@ import time
 from contextlib import closing
 from typing import Annotated, Literal, Optional
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from . import alerts, home, replies, state, usage
+from . import alerts, history, home, replies, state, usage
 
 router = APIRouter(prefix="/mobile")
 
@@ -125,16 +128,36 @@ def kinds(profile: str, session: str):
     try:
         with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source:
             source.row_factory = sqlite3.Row
-            ids = sorted(replies.lineage(source, session))
-            rows = source.execute(
-                "SELECT id, role, content, display_kind, tool_calls FROM messages WHERE session_id IN (%s) "
-                "AND role IN ('user','assistant') ORDER BY id" % ",".join("?" * len(ids)), ids).fetchall()
-            origin = source.execute("SELECT source FROM sessions WHERE id=?", (session,)).fetchone()
+            labels = replies.kinds_for(profile, source, session)
     except sqlite3.Error:
         raise HTTPException(503, "The bot's database can't be read right now")
-    autonomous = bool(origin) and (origin[0] or "") in replies.AUTONOMOUS_SOURCES
-    return {"version": replies.KINDS_VERSION,
-            "kinds": {str(rid): kind for rid, kind in replies.message_kinds(rows, autonomous).items()}}
+    return {"version": replies.KINDS_VERSION, "kinds": {str(rid): kind for rid, kind in labels.items()}}
+
+
+@router.get("/history")
+def chat_history(profile: str, session: str, tail: int = Query(history.TAIL_DEFAULT, ge=1, le=history.TAIL_MAX),
+                 since: Optional[int] = Query(None, ge=0, le=2**62), before: Optional[int] = Query(None, ge=0, le=2**62),
+                 after: Optional[int] = Query(None, ge=0, le=2**62)):
+    """A window of the chat's transcript in ``session.history``'s row shape (history.py), with the chat's kinds, so
+    the app resumes a chat without its whole history. ``after`` wins over ``before``, which wins over ``tail``+``since``."""
+    path = dict(replies.sources()).get(profile)
+    if path is None or not path.exists():
+        raise HTTPException(404, "Profile not found")
+    try:
+        with closing(sqlite3.connect(f"file:{path}?mode=ro", uri=True)) as source:
+            source.row_factory = sqlite3.Row
+            if source.execute("SELECT 1 FROM sessions WHERE id=?", (session,)).fetchone() is None:
+                raise HTTPException(404, "Session not found")
+            labels = replies.kinds_for(profile, source, session)
+        messages = history.load(profile, path, session)
+    except sqlite3.Error:
+        raise HTTPException(503, "The bot's database can't be read right now")
+    except history.HistoryUnavailable:
+        return JSONResponse({"error": "history_unavailable"}, status_code=501)
+    answer = history.window(messages, tail, since=since, before=before, after=after)
+    answer["kinds"] = {str(rid): kind for rid, kind in labels.items()}
+    answer["kinds_version"] = replies.KINDS_VERSION
+    return answer
 
 
 class View(BaseModel):

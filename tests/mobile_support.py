@@ -68,10 +68,13 @@ class MobileCase(unittest.TestCase):
             INSERT INTO messages VALUES(1,'chat','assistant','Old reply',NULL,'stop',NULL,1);''')
         for patcher in (patch.object(home, "root", return_value=self.root),
                         patch.object(paths, "hermes_home", return_value=self.root),
-                        patch.object(paths, "hermes_root", return_value=self.root)):
+                        patch.object(paths, "hermes_root", return_value=self.root),
+                        # Tests change the sessions table and look at once; the 2 s re-read window has its own test.
+                        patch.object(replies, "SESSIONS_TTL", 0.0)):
             patcher.start()
             self.addCleanup(patcher.stop)
         replies._indexes.clear()
+        replies.forget_kinds()
         devices.forget()
         self.addCleanup(devices.forget)
         self.phone, self.ipad = Device(PHONE), Device(IPAD)

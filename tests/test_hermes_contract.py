@@ -47,9 +47,13 @@ CONTRACT = [
     ("agent.secret_scope", "build_profile_secret_scope", set()),
     ("agent.secret_scope", "set_secret_scope", {"profile_home"}),
     ("agent.secret_scope", "reset_secret_scope", set()),
-    # cron_archive.py
-    ("hermes_state", "SessionDB", {"db_path"}),
+    # cron_archive.py and mobile/history.py (read_only)
+    ("hermes_state", "SessionDB", {"db_path", "read_only"}),
     ("tools.bot_live_delivery", "read_delivery_result", set()),
+    # mobile/history.py builds GET /mobile/history with Hermes's own session.history builder (3.2.0); a dotted
+    # attribute is a method on a class.
+    ("hermes_state", "SessionDB.get_messages_as_conversation", {"include_ancestors", "include_row_ids"}),
+    ("tui_gateway.server", "_history_to_messages", {"profile_home"}),
 ]
 TABLES = {"tasks": {"id", "status", "assignee", "current_run_id"}, "task_comments": {"task_id"},
           "task_events": {"id", "task_id", "kind", "payload", "created_at", "run_id"},
@@ -65,11 +69,12 @@ class HermesContractTests(unittest.TestCase):
         import importlib
         for module_name, attribute, keywords in CONTRACT:
             with self.subTest(f"{module_name}.{attribute}"):
-                module = importlib.import_module(module_name)
-                self.assertTrue(hasattr(module, attribute), f"{module_name} has no {attribute}")
+                target = importlib.import_module(module_name)
+                for name in attribute.split("."):
+                    self.assertTrue(hasattr(target, name), f"{module_name} has no {attribute}")
+                    target = getattr(target, name)
                 if keywords is None:
                     continue
-                target = getattr(module, attribute)
                 parameters = inspect.signature(target).parameters
                 accepts_any = any(p.kind == inspect.Parameter.VAR_KEYWORD for p in parameters.values())
                 for keyword in keywords:

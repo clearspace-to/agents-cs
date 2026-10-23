@@ -1,6 +1,7 @@
 """Alerts and read state for the Agents CS app: what used to be the separate push bridge process (``scripts/mobile-push``).
 
-* ``routes.py``   ``/api/plugins/agents-cs/mobile/{reads,replies,usage,kinds,view}`` (``hermes serve`` only)
+* ``routes.py``   ``/api/plugins/agents-cs/mobile/{reads,replies,usage,kinds,view,history}`` (``hermes serve`` only)
+* ``history.py``  a window of a chat's transcript, built with Hermes's own history builder (``/mobile/history``)
 * ``scan.py``     turns new replies in every bot's ``state.db`` into sealed outbox rows; the connector runs it (``cycle``)
                   every 2 s and at once on a nudge, outside Hermes
 * ``events.py``   approvals, questions, board tasks and badges, called in-process by the ``cards`` module from any

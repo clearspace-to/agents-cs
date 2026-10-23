@@ -8,12 +8,14 @@ or touches the delivery database: ``state.py`` (read state and badges), ``scan.p
 """
 from __future__ import annotations
 
+from collections import OrderedDict
 from contextlib import closing
 import json
 from pathlib import Path
 import re
 import sqlite3
 import threading
+import time
 from datetime import datetime
 
 from . import home
@@ -208,7 +210,13 @@ AUTONOMOUS_SOURCES = {"cron", "webhook"}
 def message_kinds(rows, autonomous=False):
     """{row_id: kind} for one chat's rows in order. The person's own messages and the bot's replies
     to them get no kind."""
-    kinds, answering = {}, None
+    return label_rows(rows, autonomous)[0]
+
+
+def label_rows(rows, autonomous=False, answering=None):
+    """``message_kinds`` that can carry on: starts from the kind the last prompt before ``rows`` passed on
+    (``answering``) and returns ``(kinds, answering)`` after the last row, so a cache labels each row once."""
+    kinds = {}
     for row in rows:
         if row["role"] == "user":
             kind = prompt_kind(row["content"], row["display_kind"])
@@ -219,7 +227,7 @@ def message_kinds(rows, autonomous=False):
             continue
         if kind:
             kinds[row["id"]] = kind
-    return kinds
+    return kinds, answering
 
 
 def lineage(source, session):
@@ -235,6 +243,45 @@ def lineage(source, session):
         frontier = [c for c in children if c not in ids]
         ids.update(frontier)
     return ids
+
+
+# GET /mobile/kinds labels a chat once (3.2.0): each call reads only rows newer than the last labelled, carrying the
+# answering state forward. The app asks on every chat open and every history window, for every row of the lineage.
+KINDS_CACHE_SIZE = 64
+_kinds = OrderedDict()   # (profile, session) -> {ids, last, answering, autonomous, kinds}; oldest first
+_kinds_lock = threading.Lock()
+
+
+def kinds_for(profile, source, session):
+    """{row_id: kind} for a chat, across its compression lineage, from the cache plus the rows since. A lineage that
+    changed (a continuation appeared) starts over, since the carried state would be wrong for the new segment."""
+    ids = lineage(source, session)
+    key = (profile, session)
+    with _kinds_lock:
+        entry = _kinds.get(key)
+        if entry is None or entry["ids"] != ids:
+            origin = source.execute("SELECT source FROM sessions WHERE id=?", (session,)).fetchone()
+            entry = {"ids": ids, "last": 0, "answering": None, "kinds": {},
+                     "autonomous": bool(origin) and (origin[0] or "") in AUTONOMOUS_SOURCES}
+        ordered = sorted(ids)
+        rows = source.execute(
+            "SELECT id, role, content, display_kind, tool_calls FROM messages WHERE session_id IN (%s) "
+            "AND role IN ('user','assistant') AND id>? ORDER BY id" % ",".join("?" * len(ordered)),
+            [*ordered, entry["last"]]).fetchall()
+        if rows:
+            new, entry["answering"] = label_rows(rows, entry["autonomous"], entry["answering"])
+            entry["kinds"].update(new)
+            entry["last"] = rows[-1]["id"]
+        _kinds[key] = entry
+        _kinds.move_to_end(key)
+        while len(_kinds) > KINDS_CACHE_SIZE:
+            _kinds.popitem(last=False)
+        return dict(entry["kinds"])
+
+
+def forget_kinds():
+    with _kinds_lock:
+        _kinds.clear()
 
 
 def is_silence(text):
@@ -296,15 +343,19 @@ def compression_tips(sessions):
     return tips
 
 
+SESSIONS_TTL = 2.0  # seconds between re-reads of the sessions table (3.2.0): the scan asks every 2 s, every device every 5 s
+
+
 class Index:
     """Per bot database, read once and incrementally: the newest person-facing reply per chat, and
     each new one as it appears. Rebuilt from the start after a restart; alerts use the cursor."""
 
-    def __init__(self, path):
+    def __init__(self, path, clock=time.monotonic):
         self.lock = threading.RLock()
         self.path, self.last, self.answering, self.latest, self.groups = path, 0, {}, {}, {}
         self.tips, self.sources, self.stamps = {}, {}, {}
         self.found = []  # person-facing replies read but not yet taken by the alert scan
+        self.clock, self.sessions_read, self.stamp = clock, None, None  # when the sessions table was last read
 
     def update(self):
         with self.lock:
@@ -313,14 +364,23 @@ class Index:
     def _update(self):
         if not self.path.exists():
             return
+        now = self.clock()
+        fresh = self.sessions_read is not None and now - self.sessions_read < SESSIONS_TTL
         with closing(sqlite3.connect(f"file:{self.path}?mode=ro", uri=True)) as source:
             source.row_factory = sqlite3.Row
-            stamp = "timestamp" if any(r[1] == "timestamp" for r in source.execute("PRAGMA table_info(messages)")) else "NULL"
+            if not fresh:
+                self.stamp = "timestamp" if any(r[1] == "timestamp" for r in source.execute("PRAGMA table_info(messages)")) else "NULL"
             rows = source.execute(f"""SELECT id, session_id, role, content, display_kind, finish_reason, tool_calls, active,
-                {stamp} AS stamp FROM messages WHERE id>? AND role IN ('user','assistant') ORDER BY id""", (self.last,)).fetchall()
+                {self.stamp} AS stamp FROM messages WHERE id>? AND role IN ('user','assistant') ORDER BY id""", (self.last,)).fetchall()
+            # The sessions table (every chat's group, title and lineage) changes rarely and is read at most every
+            # SESSIONS_TTL, unless a new row belongs to a chat it hasn't listed yet; the messages query runs every call.
+            if fresh and all(row["session_id"] in self.sources for row in rows):
+                self._index(rows)
+                return
             have = {r[1] for r in source.execute("PRAGMA table_info(sessions)")}
             wanted = [c for c in SESSION_COLUMNS if c in have]
             sessions = [dict(r) for r in source.execute("SELECT %s FROM sessions" % ", ".join(wanted)).fetchall()]
+        self.sessions_read = now
         self.tips = compression_tips(sessions)
         titles = {r["id"]: r.get("title") or "" for r in sessions}
         self.sources = {r["id"]: r.get("source") or "" for r in sessions}
@@ -329,6 +389,9 @@ class Index:
         self.groups = {r["id"]: chat_group(r.get("source"), r.get("hidden"), r.get("archived"),
                                            BOT_CHAT_TITLE in (titles.get(r["id"]), titles.get(r.get("parent_session_id"))))
                        for r in sessions}
+        self._index(rows)
+
+    def _index(self, rows):
         for row in rows:
             self.last = row["id"]
             chat = self.tips.get(row["session_id"], row["session_id"])
