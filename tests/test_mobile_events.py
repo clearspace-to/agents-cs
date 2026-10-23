@@ -45,6 +45,17 @@ class EventTests(MobileCase):
         self.assertEqual(json.loads(row["payload_json"]),
                          {"aps": {"content-available": 1}, "hermes": {"approvalResolved": {"profile": "jarvis", "chat": "chat"}}})
 
+    def test_decisions_closed_clears_their_cards_everywhere_with_a_silent_push(self):
+        events.decisions_closed({"profile": "jarvis", "cards": ["a" * 32, "../bad", 7]})
+        (row,) = self.queued()
+        self.assertEqual((row["push_type"], row["priority"]), ("background", 5))
+        self.assertEqual(json.loads(row["payload_json"]),
+                         {"aps": {"content-available": 1}, "hermes": {"decisionsClosed": {"profile": "jarvis", "cards": ["a" * 32]}}})
+        self.clear()
+        for bad in ({"profile": "jarvis", "cards": []}, {"profile": "../etc", "cards": ["a" * 32]}, {"cards": ["a" * 32]}):
+            events.decisions_closed(bad)
+        self.assertEqual(self.rows(), [])
+
     def test_approval_alert_offers_allow_for_this_chat_only_when_hermes_does(self):
         body = {"event": "requested", "profile": "jarvis", "session_id": "chat", "command": "rm -rf build", "description": "Delete"}
         for extra, category in (({}, "approval"), ({"allow_session": True}, "approval-session"), ({"allow_session": False}, "approval")):

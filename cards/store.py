@@ -215,11 +215,15 @@ class DecisionLog(FormStore):
 
     def close_from(self, text: str, *, profile: str | None = None, now: float | None = None) -> int:
         """Close the decisions a person's message answers. Returns how many closed."""
+        return len(self.close_ids_from(text, profile=profile, now=now))
+
+    def close_ids_from(self, text: str, *, profile: str | None = None, now: float | None = None) -> list[str]:
+        """``close_from``, returning the card ids it closed (so every other device can be told)."""
         blocks = cards.parse_response_blocks(text)
         if not blocks:
-            return 0
+            return []
         current = int(now if now is not None else time.time())
-        closed = 0
+        closed: list[str] = []
         with closing(self._connect()) as connection, connection:
             for block in blocks:
                 values = block.get("values") if isinstance(block.get("values"), dict) else {}
@@ -229,7 +233,8 @@ class DecisionLog(FormStore):
                 if profile:
                     query += " AND profile=?"
                     params += (profile,)
-                closed += connection.execute(query, params).rowcount
+                if connection.execute(query, params).rowcount:
+                    closed.append(block["card_id"])
         return closed
 
     def discard(self, card_ids: list[str], *, profile: str | None = None, now: float | None = None) -> int:
@@ -277,6 +282,16 @@ class DecisionLog(FormStore):
                 "WHERE profile=? AND state='open' AND task_id IS NULL ORDER BY created_at DESC LIMIT ?",
                 (profile, limit)).fetchall()
         return [dict(row) for row in rows]
+
+    def closed(self, *, profile: str, days: int = 14, limit: int = 500, now: float | None = None) -> list[str]:
+        """The bot's chat decisions the person answered or skipped lately, on any device: another device whose
+        transcript hasn't caught up yet hides these rather than asking again (2026-10-23)."""
+        since = int(now if now is not None else time.time()) - days * 86_400
+        with closing(self._connect()) as connection:
+            rows = connection.execute(
+                "SELECT card_id FROM decisions WHERE profile=? AND state IN ('answered','skipped') AND task_id IS NULL "
+                "AND closed_at>=? ORDER BY closed_at DESC LIMIT ?", (profile, since, limit)).fetchall()
+        return [row["card_id"] for row in rows]
 
     def open_chat_decisions(self) -> int:
         """Every bot's open chat decisions: with the tasks that need the person, the app icon's badge."""

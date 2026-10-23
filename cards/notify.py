@@ -5,13 +5,14 @@ dropped, so a slow or absent alert path never slows Hermes.
 Since 2.0 there is no bridge process and no HTTP: ``post(kind, body)`` calls ``mobile.events.<kind>(body)`` in-process,
 which seals the alert for each device and writes it to the outbox (``<root home>/hermes-bots/delivery.db``) that the
 connector drains. That works from any Hermes process (a worker or a profile's gateway included), because SQLite is the
-hand-off. The kinds are ``approval``, ``question`` and ``nudge`` (``alerts.py``) and these two:
+hand-off. The kinds are ``approval``, ``question`` and ``nudge`` (``alerts.py``) and these three:
 
 * ``task``      ``{event: requested|resolved, board, task_id, title, bot, kind, reason}`` rings the phone
                 ("Friday needs your input", kind ``blocked``/``review``) or clears that alert everywhere.
 * ``attention`` ``{board, count, tasks: [{id, title, bot, kind}], decisions}``: what the app icon badge counts beside
                 unread chats, and the list diffed to clear alerts for tasks that stopped needing the person on the
                 desktop.
+* ``decisions_closed`` ``{profile, cards}``: decisions the person answered or skipped, cleared on every device.
 """
 from __future__ import annotations
 
@@ -56,6 +57,13 @@ def task_event(event: str, *, board: str | None, task_id: str, title: str | None
                kind: str, reason: str | None = None) -> None:
     post("task", {"event": event, "board": board or "", "task_id": task_id, "title": (title or "")[:200],
                    "bot": bot or "", "kind": kind, "reason": (reason or "")[:400]})
+
+
+def decisions_closed(profile: str | None, card_ids: list[str]) -> None:
+    """The person answered or skipped these decisions: every device drops their cards now, not when its copy of the
+    chat next reloads (2026-10-23: one answered on the Mac was asked again on the phone)."""
+    if card_ids:
+        post("decisions_closed", {"profile": profile or "default", "cards": list(card_ids)[:50]})
 
 
 def request_kind(row: dict[str, Any]) -> str:

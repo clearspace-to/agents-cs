@@ -132,7 +132,7 @@ def on_pre_llm_call(session_id: str = "", user_message: Any = None, **_kwargs: A
     # The person's answers (from the app's deck, or any client that sends the block) close decisions.
     if _DECISIONS is not None and isinstance(user_message, str) and cards.RESPONSE_FENCE in user_message:
         try:
-            _DECISIONS.close_from(user_message, profile=_PROFILE)
+            notify.decisions_closed(_PROFILE, _DECISIONS.close_ids_from(user_message, profile=_PROFILE))
         except Exception:  # never let bookkeeping break a turn
             pass
     return None

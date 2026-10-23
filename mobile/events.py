@@ -7,7 +7,7 @@ process): each function seals the alert for every device and writes the rows to 
 which the connector drains; SQLite is the hand-off. ``nudge`` asks the connector, which scans for finished replies
 (``scan.py``), to look now by touching the file it watches (otherwise its 2 s cycle finds the reply anyway).
 
-``cards/notify.py`` calls these by name (``approval``, ``question``, ``task``, ``attention``, ``nudge``) on a daemon
+``cards/notify.py`` calls these by name (``approval``, ``question``, ``task``, ``attention``, ``decisions_closed``, ``nudge``) on a daemon
 thread; a malformed event is ignored, and a failure is logged there, never raised into Hermes.
 """
 from __future__ import annotations
@@ -69,6 +69,18 @@ def approval(event: dict) -> None:
             alerts.push_all(con, {"content-available": 1},
                             {"hermes": {"approvalResolved": {"profile": profile, "chat": chat}}},
                             push_type="background", priority=5)
+
+
+def decisions_closed(event: dict) -> None:
+    """Decisions answered or skipped on one device: a silent push tells every device to drop their cards."""
+    profile = event.get("profile")
+    ids = [card for card in event.get("cards") or [] if isinstance(card, str) and _ID.fullmatch(card)][:50]
+    if not alerts.valid_profile(profile) or not ids:
+        return
+    log.info("agents-cs mobile: decisions closed %s %s", profile, len(ids))
+    with _connect() as con, con:
+        alerts.push_all(con, {"content-available": 1}, {"hermes": {"decisionsClosed": {"profile": profile, "cards": ids}}},
+                        push_type="background", priority=5)
 
 
 def question(event: dict) -> bool:

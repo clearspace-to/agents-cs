@@ -318,6 +318,20 @@ class DecisionLogTests(unittest.TestCase):
         self.assertEqual(self.log.open(profile="friday"), [])
         self.assertEqual(self.log.close_from(answer), 0, "Closing is once")
 
+    def test_closed_lists_what_was_answered_anywhere_for_other_devices(self):
+        choice = cards.render("selection", EXAMPLES["selection"], now=NOW)
+        menu = cards.render("form", {"title": "Refresh?", "submit_label": "Send", "fields": [
+            {"id": "d", "kind": "select", "label": "Decision", "options": [{"id": "a", "label": "A"}, {"id": "b", "label": "B"}]}]},
+            now=NOW, request_id_factory=lambda: "e" * 32)
+        for card in (choice, menu):
+            self.log.record(card, profile="friday", session_id="s1", now=NOW.timestamp())
+        answer = "```hermes-card-response\n" + json.dumps({"card_id": choice["id"], "values": {"selected": ["a"]}}) + "\n```"
+        self.assertEqual(self.log.close_ids_from(answer, profile="friday", now=NOW.timestamp()), [choice["id"]])
+        self.assertEqual(self.log.close_ids_from(answer, profile="friday"), [], "Closing is once")
+        self.assertEqual(self.log.closed(profile="friday", now=NOW.timestamp()), [choice["id"]], "Open ones aren't listed")
+        self.assertEqual(self.log.closed(profile="jarvis", now=NOW.timestamp()), [])
+        self.assertEqual(self.log.closed(profile="friday", now=NOW.timestamp() + 15 * 86_400), [], "Only lately")
+
 
 class FormStoreTests(unittest.TestCase):
     def setUp(self):

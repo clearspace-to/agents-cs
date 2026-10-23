@@ -4,7 +4,7 @@ by Hermes' own dashboard authentication.
 
 POST forms/{request_id}/submit   {"profile": "<bot>", "values": {...}} -> {state, code, message[, values]}
 GET  forms/{request_id}?profile=  -> {state, title[, values]}
-GET  decisions?profile=           -> {decisions: [{card_id, session_id, title, options, created_at}]}
+GET  decisions?profile=           -> {decisions: [{card_id, session_id, title, options, created_at}], closed: [card_id]}
 POST decisions/close              {"profile": "<bot>", "text": "<the answer message>"} -> {closed}
 POST kanban/specify/{task_id}     {"author": "<who>"} -> {ok, task_id, reason, new_title}
 POST kanban/decompose/{task_id}   {"author": "<who>"} -> {ok, task_id, reason, fanout, child_ids, new_title}
@@ -27,6 +27,7 @@ from fastapi import APIRouter, Body, HTTPException, Query
 
 from .. import paths
 from . import creation as _creation
+from . import notify as _notify
 from . import tasks as _tasks
 from .store import DecisionLog, FormStore
 
@@ -60,10 +61,10 @@ def status(request_id: str, profile: str | None = Query(default=None)) -> dict[s
 
 @router.get("/decisions")
 def open_decisions(profile: str = Query(...)) -> dict[str, Any]:
-    """The bot's decisions still waiting on an answer, newest first."""
+    """The bot's decisions still waiting on an answer, newest first, and the ones answered lately on any device."""
     if not _PROFILE.fullmatch(profile):
         raise HTTPException(status_code=400, detail="Bad profile")
-    return {"decisions": _decisions.open(profile=profile)}
+    return {"decisions": _decisions.open(profile=profile), "closed": _decisions.closed(profile=profile)}
 
 
 @router.post("/decisions/close")
@@ -72,7 +73,9 @@ def close_decisions(body: dict[str, Any] = Body(...)) -> dict[str, Any]:
     profile, text = body.get("profile"), body.get("text")
     if not isinstance(profile, str) or not _PROFILE.fullmatch(profile) or not isinstance(text, str):
         raise HTTPException(status_code=400, detail="Bad request")
-    return {"closed": _decisions.close_from(text[:65_536], profile=profile)}
+    closed = _decisions.close_ids_from(text[:65_536], profile=profile)
+    _notify.decisions_closed(profile, closed)
+    return {"closed": len(closed)}
 
 
 _TASK = re.compile(r"^[A-Za-z0-9_-]{1,64}$")
