@@ -196,6 +196,22 @@ class ReplyScanTests(MobileCase):
         self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 2)
         self.assertEqual(len(self.call("GET", "/reads").json()["unread"]), 2)
 
+    def test_a_background_helper_of_the_bot_chat_is_never_unread(self):
+        """A helper the Bot Chat dispatched answers the bot, not the person: no alert, no badge, no inbox row."""
+        scan.scan(self.con, "jarvis", self.source)
+        state.unread_for(self.con, state.OWNER)
+        self.session("main", "tui", hidden=1, title="Bot Chat")
+        self.session("helper", "tui", title="Send edited update", parent="main")
+        self.script('''ALTER TABLE sessions ADD COLUMN model_config TEXT;
+            UPDATE sessions SET model_config='{"_delegate_from": "main"}' WHERE id='helper';''')
+        self.reply(10, "Both dashboards verified", chat="helper")
+        self.reply(12, "Updated the skill", chat="main")
+        scan.scan(self.con, "jarvis", self.source)
+        self.con.commit()
+        self.assertEqual(self.reply_chats(), ["main"])
+        self.assertEqual([chat for _, chat, _ in state.unread_for(self.con, state.OWNER)], ["main"])
+        self.assertEqual([entry["chat"] for entry in self.call("GET", "/reads").json()["unread"]], ["main"])
+
     def test_alerts_follow_each_devices_filter(self):
         """A device is alerted only for chats its filter lists (types and bots); Bot Chats always."""
         self.link([self.phone, self.ipad])

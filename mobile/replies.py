@@ -87,11 +87,16 @@ def in_view(view, profile, group):
     return group == BOT_CHAT or (group in groups and (not bots or profile in bots))
 
 
-def chat_group(source, hidden, archived, bot_chat=False):
+def chat_group(source, hidden, archived, bot_chat=False, delegate=False):
     """The inbox filter group a session belongs to; None for worker sessions nobody reads."""
     source = source or ""
     if archived:
         return "archived"
+    # A background helper a chat dispatched (Hermes marks it ``_delegate_from``; its source is the parent's, so
+    # Hermes's own lists hide it by the marker). Its answers go to the bot that sent it, which tells the person
+    # in its own chat. Counted as unread it became an extra inbox row that opened as the Bot Chat (2026-10-23).
+    if delegate:
+        return None
     if bot_chat:
         return BOT_CHAT
     if source in NEVER_SOURCES:
@@ -387,7 +392,8 @@ class Index:
         # A chat is known by its compression tip, as the app lists it; the tip carries the title. A
         # continuation of the Bot Chat is still the Bot Chat.
         self.groups = {r["id"]: chat_group(r.get("source"), r.get("hidden"), r.get("archived"),
-                                           BOT_CHAT_TITLE in (titles.get(r["id"]), titles.get(r.get("parent_session_id"))))
+                                           BOT_CHAT_TITLE in (titles.get(r["id"]), titles.get(r.get("parent_session_id"))),
+                                           "_delegate_from" in (r.get("model_config") or ""))
                        for r in sessions}
         self._index(rows)
 
