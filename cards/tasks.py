@@ -5,6 +5,7 @@ Four dashboard routes, mounted by ``cards/routes.py`` under ``/api/plugins/agent
 GET  tasks/board?board=&include_archived=     the board with containment, attention and allowed moves
 POST tasks/quick-add?board=                   one call: create the task, write it up or plan it, start it
 POST tasks/{id}/comments?board=               a comment plus the right follow-up, coordinator included
+POST tasks/{id}/seen?board=                   {review_key}: the person opened a root waiting on review (off the badge)
 POST actions/{action_id}/answers?board=       410 task_cards_removed (old app builds still call it)
 
 Task-bound cards were removed on 2026-10-23 (Mark): a worker that needs the person blocks its task with the
@@ -227,6 +228,12 @@ def pending_requests(task: dict[str, Any], family: list[str], *, tasks_by_id: di
     return requests
 
 
+def review_key(requests: list[dict[str, Any]]) -> str:
+    """Which reviews a root waits on: a new or re-requested review changes it, so a root the person already
+    opened counts again (Mark, 2026-10-23: a review read on the phone stays on Review without the badge)."""
+    return "|".join(f"{r['task_id']}@{r['created_at']}" for r in requests)
+
+
 def attention_state(task: dict[str, Any], *, pending: int, waiting: list[str],
                     child_statuses: list[str], escalated: bool = False, external_wait: bool = False,
                     family_state: str | None = None, family_external: bool = False) -> str:
@@ -322,12 +329,14 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
                   links: list[tuple[str, str]], latest_event_id: int,
                   now: int | None = None, include_archived: bool = False,
                   stored_containment: list[tuple[str, str]] | tuple = (), preparing: set[str] | frozenset = frozenset(),
-                  stalls: set[str] | frozenset = frozenset()) -> dict[str, Any]:
+                  stalls: set[str] | frozenset = frozenset(), seen: dict[str, str] | None = None) -> dict[str, Any]:
     """The ``GET tasks/board`` payload from raw board data. ``tasks`` are Hermes task dicts (every field
     Hermes's own board puts on them); this adds containment, dependencies, review, block reason,
     attention, the allowed moves and whether a write-up is still running (``preparing``), and recomputes
     ``link_counts`` and ``progress`` the way Hermes's board does. A root in ``stalls`` (the coordinator left
-    nothing moving) needs the person for as long as its family is still stalled. ``actions`` is always ``[]``:
+    nothing moving) needs the person for as long as its family is still stalled. A root that needs the person only
+    for reviews carries ``attention.review_key``, and ``attention.seen`` once the person opened it at that key
+    (``seen``, root id → key): it stays on Review but leaves the badge and the alerts. ``actions`` is always ``[]``:
     task-bound cards were removed on 2026-10-23, and shipped app builds still decode the key."""
     tasks_by_id = {t["id"]: t for t in tasks}
     parent_of, children_of = containment(events_by_task, stored_containment)
@@ -373,6 +382,12 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
         own_state = attention_state(task, **inputs)
         state = attention_state(task, **inputs, family_state=flagged[0]["state"] if flagged else None)
         row["attention"] = {"state": state, "pending": len(requests), "first": requests[0] if requests else None}
+        flagged_state = flagged[0]["state"] if flagged else None
+        if requests and attention_state(task, **{**inputs, "pending": 0}, family_state=flagged_state) not in notify.NEEDS_PERSON:
+            key = review_key(requests)
+            row["attention"]["review_key"] = key
+            if (seen or {}).get(task["id"]) == key:
+                row["attention"]["seen"] = True
         if state != own_state:
             # A subtask moved the root to Review. Shipped app builds decode only card/review requests, so the
             # root's top card reads its block_reason ("needs your input" + this line, with Reply); `subtask`
@@ -979,7 +994,8 @@ def board_payload(board: Any, decisions: DecisionLog, *, include_archived: bool 
     payload = compose_board(board=board.slug, tasks=tasks, events_by_task=board.events(), links=board.links(),
                             latest_event_id=board.latest_event_id(),
                             include_archived=include_archived, stored_containment=decisions.containment_pairs(board.slug),
-                            preparing=decisions.preparing_tasks(board.slug), stalls=decisions.stalls(board.slug))
+                            preparing=decisions.preparing_tasks(board.slug), stalls=decisions.stalls(board.slug),
+                            seen=decisions.reviews_seen(board.slug))
     # A family derived from Hermes's events is remembered, so the board no longer depends on those payloads.
     derived: dict[str, list[str]] = {}
     for root, child in payload.get("containment", []):
@@ -1121,6 +1137,28 @@ def _finish_quick_add(board_ref: Any, decisions: DecisionLog, key: str | None, t
             pass
         board.close()
     return result
+
+
+def see_review(board: Any, decisions: DecisionLog, task_id: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
+    """``POST tasks/{id}/seen``: the person opened a root waiting on their review. Recorded at the ``review_key`` the
+    app saw, only while it is still the board's, so a review requested since counts again. The root stays on Review;
+    it leaves the badge, and its alert clears on every device."""
+    if not _TASK_ID.fullmatch(task_id or ""):
+        return 404, {"detail": "task_not_found"}
+    key = body.get("review_key")
+    row = next((t for t in board_payload(board, decisions)["tasks"] if t["id"] == task_id), None)
+    if row is None:
+        return 404, {"detail": "task_not_found"}
+    current = (row.get("attention") or {}).get("review_key")
+    if not isinstance(key, str) or current != key:
+        return 200, {"seen": False}
+    if not (row.get("attention") or {}).get("seen"):
+        decisions.record_review_seen(board.slug, task_id, key)
+        try:
+            attention_after(board, decisions, task_id)
+        except Exception:
+            pass
+    return 200, {"seen": True}
 
 
 def _author(body: dict[str, Any]) -> str:
@@ -1341,6 +1379,17 @@ def make_router(decisions: DecisionLog, board_factory: Callable[[str | None], An
             return failure
         try:
             status, payload = comment_on_task(opened_board, decisions, task_id, body if isinstance(body, dict) else {})
+        finally:
+            opened_board.close()
+        return JSONResponse(payload, status_code=status)
+
+    @router.post("/tasks/{task_id}/seen")
+    def task_seen(task_id: str, body: dict[str, Any] = Body(...), board: str | None = Query(default=None)):
+        opened_board, failure = opened(board)
+        if failure is not None:
+            return failure
+        try:
+            status, payload = see_review(opened_board, decisions, task_id, body if isinstance(body, dict) else {})
         finally:
             opened_board.close()
         return JSONResponse(payload, status_code=status)

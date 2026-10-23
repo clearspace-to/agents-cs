@@ -79,11 +79,12 @@ def request_kind(row: dict[str, Any]) -> str:
 
 def attention_summary(payload: dict[str, Any], decisions_open: int) -> dict[str, Any]:
     """What the badge counts for one board: roots (and standalone tasks) that need the person, plus
-    the bots' open chat decisions. Subtasks count through their root, as the app counts them."""
+    the bots' open chat decisions. Subtasks count through their root, as the app counts them. A root waiting
+    only on a review the person has opened (``attention.seen``) doesn't count, so its alert clears too."""
     rows = []
     for task in payload.get("tasks", []):
         attention = task.get("attention") or {}
-        if task.get("parent_id") is None and attention.get("state") in NEEDS_PERSON:
+        if task.get("parent_id") is None and attention.get("state") in NEEDS_PERSON and not attention.get("seen"):
             rows.append({"id": task["id"], "title": task.get("title"), "bot": task.get("assignee") or "",
                          "kind": request_kind(task)})
     return {"board": payload.get("board") or "", "tasks": rows, "decisions": int(decisions_open),

@@ -108,6 +108,11 @@ class FormStore:
         # family is still stalled, and the next coordination clears it.
         connection.execute("""CREATE TABLE IF NOT EXISTS stalls(
             board TEXT NOT NULL, root_id TEXT NOT NULL, created_at INTEGER, PRIMARY KEY(board, root_id))""")
+        # A root waiting on review that the person opened (2026-10-23), at the reviews it waited on then
+        # (``tasks.review_key``): it stays on Review but leaves the badge until a new review changes the key.
+        connection.execute("""CREATE TABLE IF NOT EXISTS reviews_seen(
+            board TEXT NOT NULL, root_id TEXT NOT NULL, review_key TEXT NOT NULL, seen_at INTEGER,
+            PRIMARY KEY(board, root_id))""")
         # A scheduled run's result relayed into a main chat (2026-10-14, relay.py): the one record of which run
         # a Bot Chat result came from, read by the archiver and the mobile module.
         connection.execute("""CREATE TABLE IF NOT EXISTS relays(
@@ -505,6 +510,19 @@ class DecisionLog(FormStore):
         with closing(self._connect()) as connection:
             return {row["root_id"] for row in connection.execute(
                 "SELECT root_id FROM stalls WHERE board=?", (resolve_board(board),))}
+
+
+    # --- Reviews seen ------------------------------------------------------------------------------
+
+    def record_review_seen(self, board: str | None, root_id: str, review_key: str, *, now: float | None = None) -> None:
+        with closing(self._connect()) as connection, connection:
+            connection.execute("INSERT OR REPLACE INTO reviews_seen(board,root_id,review_key,seen_at) VALUES(?,?,?,?)",
+                               (resolve_board(board), root_id, review_key, int(now if now is not None else time.time())))
+
+    def reviews_seen(self, board: str | None) -> dict[str, str]:
+        with closing(self._connect()) as connection:
+            return {row["root_id"]: row["review_key"] for row in connection.execute(
+                "SELECT root_id, review_key FROM reviews_seen WHERE board=?", (resolve_board(board),))}
 
 
 def action_from_row(row: sqlite3.Row | dict[str, Any]) -> dict[str, Any]:

@@ -654,6 +654,38 @@ class RouteBodyTests(unittest.TestCase):
         self.assertEqual((board.calls, board._comments), ([], {}))
         self.assertEqual(self.log.action(card["id"])["state"], "open", "nothing is answered")
 
+    def test_an_opened_review_stays_on_review_but_leaves_the_badge(self):
+        # Mark, 2026-10-23: a review read on the phone stays on Review without the badge or its alert, until a new
+        # review is requested. Only a root waiting on reviews alone can be seen; a block still counts.
+        T = FakeBoard.task_row
+        board = FakeBoard([T("r", "review", "Draft the invite", started_at=NOW - 900)],
+                          {"r": [{"id": 1, "task_id": "r", "kind": "review_requested", "payload": {"summary": "Draft ready."},
+                                  "created_at": NOW - 600}]}, [])
+        sent = []
+        notify.transport = lambda kind, body: sent.append((kind, body))
+        self.addCleanup(setattr, notify, "transport", None)
+        root = tasks.board_payload(board, self.log)["tasks"][0]
+        key = root["attention"]["review_key"]
+        self.assertEqual((key, root["attention"].get("seen")), (f"r@{NOW - 600}", None))
+        self.assertEqual(tasks.see_review(board, self.log, "r", {"review_key": "r@1"}), (200, {"seen": False}), "a stale key")
+        self.assertEqual(sent, [])
+        self.assertEqual(tasks.see_review(board, self.log, "r", {"review_key": key}), (200, {"seen": True}))
+        root = tasks.board_payload(board, self.log)["tasks"][0]
+        self.assertEqual((root["attention"]["state"], root["attention"]["seen"]), ("needs_you", True), "still on Review")
+        self.assertEqual(notify.attention_summary(tasks.board_payload(board, self.log), 0)["count"], 0)
+        self.assertIn(("task", {"event": "resolved", "board": "default", "task_id": "r", "title": "Draft the invite",
+                                "bot": "", "kind": "resolved", "reason": ""}), sent, "its alert clears everywhere")
+        # A new review request changes the key: it counts again.
+        board._events["r"].append({"id": 2, "task_id": "r", "kind": "review_requested", "payload": {}, "created_at": NOW - 60})
+        root = tasks.board_payload(board, self.log)["tasks"][0]
+        self.assertNotIn("seen", root["attention"])
+        self.assertEqual(notify.attention_summary(tasks.board_payload(board, self.log), 0)["count"], 1)
+        # The family root waits on c1's review and c2's question: no key, so opening it never hides the block.
+        family = family_board()
+        r1 = next(t for t in tasks.board_payload(family, self.log)["tasks"] if t["id"] == "r1")
+        self.assertNotIn("review_key", r1["attention"])
+        self.assertEqual(tasks.see_review(family, self.log, "r1", {"review_key": ""}), (200, {"seen": False}))
+
     def test_an_old_open_card_is_ignored_by_the_board_and_the_badge(self):
         # Cards bound before 2026-10-23 stay in the table but never count: the blocked task needs you through its
         # block, the root is led by its review, and the alert kind is never "decision".
