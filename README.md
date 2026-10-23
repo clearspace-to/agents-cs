@@ -69,7 +69,7 @@ There is no device registration route.
   computer to this plugin).
 - `routing_key_file`: OpenRouter key for Jev's classifier; default `secrets/jev-openrouter-api-key` under the Hermes
   home. No key means routing is unavailable (the chat keeps its model), never an error.
-- `card_guard`: `off` | `shadow` | `drafts` (only a drafted message missing its approval card is rescued; questions stay as written) | `on`, and `card_guard_key_file` (default: routing's key above).
+- `card_guard`: `off` | `shadow` | `on`, and `card_guard_key_file` (default: routing's key above).
 
 ## Where it keeps things
 

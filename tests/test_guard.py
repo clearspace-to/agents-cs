@@ -165,34 +165,6 @@ class GuardTests(unittest.TestCase):
         self.assertIn("Hi Ash, are we still on?", text)
 
 
-    def test_drafts_mode_leaves_questions_alone(self):
-        llm = llm_returning(FORM_PLAN)
-        self.assertIsNone(self.run_guard(INCIDENT, current_mode="drafts", llm=llm))
-        self.assertEqual(llm.calls, [])
-        self.assertEqual(self.logged()[-1]["result"], "not_draft")
-        self.assertIsNone(self.run_guard("Which Tim?", classify=asks("choice"), current_mode="drafts", llm=llm))
-        self.assertEqual(llm.calls, [])
-
-    def test_drafts_mode_rescues_only_the_message_card(self):
-        plan = {"cards": [
-            {"type": "message", "args": {"title": "Send via Teams to Ash?", "channel": "teams", "to": ["Ash"],
-                                         "body": "Hi Ash, are we still on?"}},
-            {"type": "selection", "args": {"title": "Then what?", "mode": "single", "options": [
-                {"id": "a", "label": "Follow up"}, {"id": "b", "label": "Wait"}]}}],
-            "remove": []}
-        made, text = self.run_guard("Teams to Ash:\n\nHi Ash, are we still on?\n\nThen what?", classify=asks("draft"),
-                                    current_mode="drafts", llm=llm_returning(plan))
-        self.assertEqual([card["type"] for card in made], ["message"])
-        self.assertIn("Hi Ash, are we still on?", text)
-        self.assertEqual(self.logged()[-1]["cards"], ["message"])
-
-    def test_mode_reads_drafts_from_settings(self):
-        with patch.object(guard, "_settings", return_value={"card_guard": "drafts"}):
-            self.assertEqual(guard.mode(), "drafts")
-        with patch.object(guard, "_settings", return_value={"card_guard": True}):
-            self.assertEqual(guard.mode(), "off")
-
-
 class HookTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
