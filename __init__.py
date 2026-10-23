@@ -21,7 +21,7 @@ import importlib
 import logging
 from typing import Any
 
-VERSION = "3.3.2"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
+VERSION = "3.3.3"  # keep equal to plugin.yaml (tests/test_plugin.py checks)
 NAME = "agents-cs"
 MODULES = ("cards", "mobile", "voice", "routing")
 
