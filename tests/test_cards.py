@@ -408,6 +408,37 @@ class PluginTests(unittest.TestCase):
         self.assertEqual(cards.cards_in(reply)[0]["id"], result["card_id"])
         self.assertIsNone(transform(response_text="Next turn.", session_id="s1", platform="tui"))
 
+    def test_cron_cards_remove_silence_before_first_wins_transform(self):
+        ctx = self.registered(True)
+        transform = ctx.hooks["transform_llm_output"]
+        for native in (True, False):
+            with self.subTest(native=native), patch.object(plugin, "_run_for_bot_chat", return_value=native):
+                card_id = json.loads(ctx.tools["hermes_card_summary"][1](EXAMPLES["summary"], session_id="job"))["card_id"]
+                reply = transform(response_text="[SILENT]", session_id="job", platform="cron")
+                self.assertNotIn("[SILENT]", reply)
+                if native:
+                    self.assertEqual([c["id"] for c in cards.cards_in(reply)], [card_id])
+                else:
+                    self.assertIn("Backup finished", reply)
+
+    def test_cron_copied_card_marker_cleanup_and_idempotency(self):
+        ctx = self.registered(True)
+        transform = ctx.hooks["transform_llm_output"]
+        card = cards.fence(cards.render("summary", EXAMPLES["summary"]))
+        with patch.object(plugin, "_run_for_bot_chat", return_value=True):
+            for text in ("[SILENT]\n\n" + card, card + "\n[SILENT]"):
+                reply = transform(response_text=text, session_id="job", platform="cron")
+                self.assertEqual(reply, card)
+                self.assertIsNone(transform(response_text=reply, session_id="job", platform="cron"))
+
+    def test_cardless_silence_and_interactive_text_are_unchanged(self):
+        ctx = self.registered(True)
+        transform = ctx.hooks["transform_llm_output"]
+        self.assertIsNone(transform(response_text="[SILENT]", session_id="job", platform="cron"))
+        ctx.tools["hermes_card_summary"][1](EXAMPLES["summary"], session_id="chat")
+        reply = transform(response_text="[SILENT]", session_id="chat", platform="desktop")
+        self.assertTrue(reply.startswith("[SILENT]\n"))
+
     def test_repeated_draft_tool_returns_and_attaches_original_id(self):
         ctx = self.registered(True)
         handler = ctx.tools["hermes_card_message"][1]

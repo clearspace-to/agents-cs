@@ -169,8 +169,21 @@ def on_transform_llm_output(response_text: str = "", session_id: str = "", platf
             pass
     pending = _take(session_id)
     text = relayed if relayed is not None else (response_text or "")
+    # Output transforms are first-wins, not a pipeline: the silence guard cannot
+    # repair a marker after this hook attaches cards. A cron with cards is not
+    # silent. Strip only control-token lines outside fences; leave card payloads,
+    # ordinary prose, interactive replies and genuinely cardless silence alone.
+    if (platform or "").lower() == "cron" and (pending or cards.cards_in(text)):
+        kept, in_fence = [], False
+        for line in text.splitlines():
+            if line.lstrip().startswith("```"):
+                in_fence = not in_fence
+            if not in_fence and line.strip().upper() == "[SILENT]":
+                continue
+            kept.append(line)
+        text = "\n".join(kept).strip()
     if relayed is not None and not pending:
-        return relayed if relayed != response_text else None
+        return text if text != response_text else None
     if (platform or "").lower() in TEXT_ONLY_PLATFORMS and not _run_for_bot_chat(platform, session_id):
         # Nobody can tap these cards, so a decision among them must not stay open on the app's bot page.
         if _DECISIONS is not None:
@@ -181,7 +194,7 @@ def on_transform_llm_output(response_text: str = "", session_id: str = "", platf
         swapped = cards.replace_fences(text, lambda card, raw: card["fallback"] if card else raw)
         extra = [card["fallback"] for card in pending if card["id"] not in text]
         result = "\n\n".join([swapped.rstrip()] + extra) if extra else swapped
-        return result if result != text else None
+        return result if result != response_text else None
     if not pending and (platform or "").lower() != "cron":
         guarded = _guard(text, session_id)
         if guarded is not None:
@@ -207,7 +220,7 @@ def on_transform_llm_output(response_text: str = "", session_id: str = "", platf
             _DECISIONS.hold([card["id"] for card in cards.cards_in(result)])
         except Exception:  # bookkeeping never breaks a reply
             pass
-    return result if result != text else None
+    return result if result != response_text else None
 
 
 def _hermes_home() -> Path:
