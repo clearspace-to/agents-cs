@@ -5,7 +5,7 @@ Four dashboard routes, mounted by ``cards/routes.py`` under ``/api/plugins/agent
 GET  tasks/board?board=&include_archived=     the board with containment, attention and allowed moves
 POST tasks/quick-add?board=                   one call: create the task, write it up or plan it, start it
 POST tasks/{id}/comments?board=               a comment plus the right follow-up, coordinator included
-POST tasks/{id}/seen?board=                   {review_key}: the person opened a root waiting on review (off the badge)
+POST tasks/{id}/seen?board=                   {review_key}: the person opened a root on Review (off the badge)
 POST actions/{action_id}/answers?board=       410 task_cards_removed (old app builds still call it)
 
 Task-bound cards were removed on 2026-10-23 (Mark): a worker that needs the person blocks its task with the
@@ -228,10 +228,18 @@ def pending_requests(task: dict[str, Any], family: list[str], *, tasks_by_id: di
     return requests
 
 
-def review_key(requests: list[dict[str, Any]]) -> str:
-    """Which reviews a root waits on: a new or re-requested review changes it, so a root the person already
-    opened counts again (Mark, 2026-10-23: a review read on the phone stays on Review without the badge)."""
-    return "|".join(f"{r['task_id']}@{r['created_at']}" for r in requests)
+def review_key(state: str, requests: list[dict[str, Any]], members: list[str],
+               events_by_task: dict[str, list[dict[str, Any]]], *, stalled: bool = False) -> str:
+    """What a root on Review is waiting for: its state, its open reviews, and the latest block on it and on each
+    subtask that needs the person. A new review, a new block or question, or a new stall changes it, so a root the
+    person already opened counts again (Mark, 2026-10-23/24: anything on Review read on the phone stays there
+    without the app icon badge). The name says review because 3.4.0 apps send it back as ``review_key``."""
+    blocks = []
+    for member in members:
+        ids = [e.get("id") or 0 for e in events_by_task.get(member, []) if e.get("kind") in ("blocked", "block_loop_detected")]
+        blocks.append(f"{member}#{max(ids, default=0)}")
+    reviews = [f"{r['task_id']}@{r['created_at']}" for r in requests]
+    return "|".join([state, *reviews, *blocks, *(["stalled"] if stalled else [])])
 
 
 def attention_state(task: dict[str, Any], *, pending: int, waiting: list[str],
@@ -334,8 +342,8 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
     Hermes's own board puts on them); this adds containment, dependencies, review, block reason,
     attention, the allowed moves and whether a write-up is still running (``preparing``), and recomputes
     ``link_counts`` and ``progress`` the way Hermes's board does. A root in ``stalls`` (the coordinator left
-    nothing moving) needs the person for as long as its family is still stalled. A root that needs the person only
-    for reviews carries ``attention.review_key``, and ``attention.seen`` once the person opened it at that key
+    nothing moving) needs the person for as long as its family is still stalled. A task that needs the person
+    carries ``attention.review_key`` (``review_key``), and ``attention.seen`` once the person opened it at that key
     (``seen``, root id → key): it stays on Review but leaves the badge and the alerts. ``actions`` is always ``[]``:
     task-bound cards were removed on 2026-10-23, and shipped app builds still decode the key."""
     tasks_by_id = {t["id"]: t for t in tasks}
@@ -382,12 +390,6 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
         own_state = attention_state(task, **inputs)
         state = attention_state(task, **inputs, family_state=flagged[0]["state"] if flagged else None)
         row["attention"] = {"state": state, "pending": len(requests), "first": requests[0] if requests else None}
-        flagged_state = flagged[0]["state"] if flagged else None
-        if requests and attention_state(task, **{**inputs, "pending": 0}, family_state=flagged_state) not in notify.NEEDS_PERSON:
-            key = review_key(requests)
-            row["attention"]["review_key"] = key
-            if (seen or {}).get(task["id"]) == key:
-                row["attention"]["seen"] = True
         if state != own_state:
             # A subtask moved the root to Review. Shipped app builds decode only card/review requests, so the
             # root's top card reads its block_reason ("needs your input" + this line, with Reply); `subtask`
@@ -400,6 +402,12 @@ def compose_board(*, board: str, tasks: list[dict[str, Any]], events_by_task: di
                 row["block_reason"] = stalled[0]
                 row["attention"] = {"state": "needs_you", "pending": len(requests), "first": requests[0] if requests else None,
                                     "subtask": stalled[1]}
+        if row["parent_id"] is None and row["attention"]["state"] in notify.NEEDS_PERSON:
+            key = review_key(row["attention"]["state"], requests, [task["id"], *(m["task_id"] for m in flagged)],
+                             events_by_task, stalled=task["id"] in stalls)
+            row["attention"]["review_key"] = key
+            if (seen or {}).get(task["id"]) == key:
+                row["attention"]["seen"] = True
         out.append(row)
     assignees = sorted({t.get("assignee") for t in tasks if t.get("assignee") and t.get("status") != "archived"})
     return {"capability": CAPABILITY, "board": board, "latest_event_id": int(latest_event_id or 0),
@@ -1140,7 +1148,7 @@ def _finish_quick_add(board_ref: Any, decisions: DecisionLog, key: str | None, t
 
 
 def see_review(board: Any, decisions: DecisionLog, task_id: str, body: dict[str, Any]) -> tuple[int, dict[str, Any]]:
-    """``POST tasks/{id}/seen``: the person opened a root waiting on their review. Recorded at the ``review_key`` the
+    """``POST tasks/{id}/seen``: the person opened a root on Review (a review, a question, a block or a stall). Recorded at the ``review_key`` the
     app saw, only while it is still the board's, so a review requested since counts again. The root stays on Review;
     it leaves the badge, and its alert clears on every device."""
     if not _TASK_ID.fullmatch(task_id or ""):
