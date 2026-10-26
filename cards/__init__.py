@@ -29,10 +29,6 @@ the tool result hands the worker the question in words (``tasks.ask_in_words``) 
 ``kanban_block(kind="needs_input", reason=…)``, and the person answers with a task comment
 (docs/TASK_EXPERIENCE_API.md). Display-only cards in a worker behave as anywhere else.
 
-With ``card_guard`` on in the profile's plugin settings, an app reply that should have been a card
-but carries none is turned into cards before it is saved (``guard.py``: Jev decides text or card,
-the auxiliary model builds the card, this plugin validates it).
-
 Nothing here changes Hermes: tools, hooks, a skill and a dashboard API router are all part of
 its documented plugin surface.
 """
@@ -46,7 +42,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import alerts, cards, cron_archive, guard, tasks, creation, notify, relay
+from . import alerts, cards, cron_archive, tasks, creation, notify, relay
 from .store import DecisionLog, FormStore, RelayLog
 
 TOOLSET = "hermes_bots_cards"
@@ -105,8 +101,6 @@ _RELAYS: RelayLog | None = None
 _STORE: FormStore | None = None
 _PROFILE = "default"
 _CREATION: creation.BotCreation | None = None
-# The person's last message per session, as context for the card guard (bounded, in memory only).
-_LAST_USER: dict[str, str] = {}
 
 
 def on_pre_llm_call(session_id: str = "", user_message: Any = None, **_kwargs: Any) -> dict[str, str] | None:
@@ -124,11 +118,6 @@ def on_pre_llm_call(session_id: str = "", user_message: Any = None, **_kwargs: A
         pass
     if _CREATION is not None:
         _CREATION.observe_turn(session_id, str(_kwargs.get("platform") or "").lower())
-    if isinstance(user_message, str):
-        with _LOCK:
-            if len(_LAST_USER) > 200:
-                _LAST_USER.clear()
-            _LAST_USER[session_id or ""] = user_message[:2000]
     # The person's answers (from the app's deck, or any client that sends the block) close decisions.
     if _DECISIONS is not None and isinstance(user_message, str) and cards.RESPONSE_FENCE in user_message:
         try:
@@ -142,7 +131,7 @@ def on_transform_llm_output(response_text: str = "", session_id: str = "", platf
                             **_kwargs: Any) -> str | None:
     """Attach this turn's cards to the reply, or turn every card into text where cards can't show."""
     # Hermes's background review (its self-improvement pass after a turn) shares the chat's session id,
-    # but its text never reaches the chat: a card guarded from it was a decision nobody could see or
+    # but its text never reaches the chat: a card attached to it was a decision nobody could see or
     # answer, stuck as "1 open decision" with Review showing nothing (Mark, 2026-10-09).
     if _background_review():
         return None
@@ -182,10 +171,6 @@ def on_transform_llm_output(response_text: str = "", session_id: str = "", platf
         extra = [card["fallback"] for card in pending if card["id"] not in text]
         result = "\n\n".join([swapped.rstrip()] + extra) if extra else swapped
         return result if result != response_text else None
-    if not pending and (platform or "").lower() != "cron":
-        guarded = _guard(text, session_id)
-        if guarded is not None:
-            return guarded
     # A bot that copies its card anyway can garble it ("type": "further" on 2026-10-14): the app can't draw
     # that, yet the decision stays open, so Review showed nothing. Each copy becomes the card as recorded.
     by_id = {card["id"]: card for card in pending}
@@ -242,31 +227,6 @@ def _background_review() -> bool:
         return bool(is_background_review())
     except Exception:
         return False
-
-
-def _guard(text: str, session_id: str) -> str | None:
-    """Run the card guard on a card-less app reply; record its cards like the bot's own."""
-    # Task decisions must pass native tool policy; never recreate a blocked ask.
-    if os.environ.get("HERMES_KANBAN_TASK"):
-        return None
-    if not _attach_supported():
-        return None
-    with _LOCK:
-        user_message = _LAST_USER.get(session_id or "", "")
-    result = guard.run(text, parameters=parameters, user_message=user_message)
-    if result is None:
-        return None
-    made, trimmed = result
-    for card in made:
-        try:
-            if card["type"] == "form" and _STORE is not None:
-                _STORE.create(card, profile=_PROFILE, session_id=session_id or "")
-            if _DECISIONS is not None:
-                card["id"] = _DECISIONS.record(card, profile=_PROFILE, session_id=session_id or "")
-        except Exception:  # bookkeeping never breaks a reply
-            pass
-    unique = {card["id"]: card for card in made}
-    return "\n\n".join([trimmed.rstrip()] + [cards.fence(card) for card in unique.values()]).lstrip()
 
 
 def _render_handler(card_type: str, *, store: FormStore, profile: str, attached: bool,

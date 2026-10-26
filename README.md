@@ -2,17 +2,17 @@
 
 The host side of the Agents CS app (iPhone, iPad, Mac) as one Hermes plugin. Apache-2.0 (see LICENSE and the
 NOTICE files); the `routing` module is MIT (see `routing/SOURCE.md`). It changes nothing in Hermes: it uses
-Hermes's documented plugin surface (tools, hooks, a skill, middleware, a supervised background task and a dashboard router).
+Hermes's documented plugin surface (tools, hooks, a skill, request middleware, a supervised background task and a dashboard router).
 
 | Module | What it does | Where it runs |
 |---|---|---|
-| `cards` | Native cards and forms, decisions, the approval/question/task/turn hooks that ring the phone, the task experience (board, quick add, comments, answers), Kanban hooks, scheduled-run relay and archive, card guard | Every bot process (hooks, tools); routes in `hermes serve` |
+| `cards` | Native cards and forms, decisions, the approval/question/task/turn hooks that ring the phone, the task experience (board, quick add, comments, answers), Kanban hooks, scheduled-run relay and archive | Every bot process (hooks, tools); routes in `hermes serve` |
 | `mobile` | Alerts and read state for the app (formerly the separate push bridge): reply scan, sealed alerts, the outbox the connector drains, unread/badge/inbox-filter state, API usage | Alert writing in any process; the scan worker and `/mobile/*` routes in `hermes serve` (root home) |
 | `voice` | Live voice media routes (Codex subscription), per-bot voice choice | `hermes serve` only |
-| `routing` | Model Routing: per-turn model and effort routing, Jev reviews. **Off unless configured.** | Bot processes of a configured profile; routes in `hermes serve` |
+| `routing` | Auto effort: one classifier call per turn picks low, medium or high reasoning on the chat's own model, when the app switches it on for a bot or a chat (see `routing/README.md`) | Every bot process (`pre_llm_call` and `llm_request` middleware); routes in `hermes serve` |
 
 Each module loads inside its own guard: one that fails is logged and reported by `GET /api/plugins/agents-cs/info`
-(`{name, version, modules: {cards, mobile, voice, routing}, hermes_version}`; a module is `ok`, `off` or `error: ...`), and the
+(`{name, version, modules: {cards, mobile, voice, routing}, hermes_version}`; a module is `ok` or `error: ...`), and the
 others keep working.
 
 ## Install
@@ -57,19 +57,18 @@ There is no bridge process, port, key or APNs credential on the Hermes computer.
 Everything is under `/api/plugins/agents-cs/`, behind Hermes's own dashboard authentication:
 `forms/…`, `decisions…`, `kanban/…`, `tasks/…`, `actions/…` (cards); `mobile/reads`, `mobile/replies`,
 `mobile/kinds`, `mobile/view`, `mobile/usage` (mobile; the device is the hub's `X-Hermes-Bots-Device` header, the owner
-Hermes's session user, else the computer's one owner); `voice/<op>` (voice); `routing/<op>` (routing, when configured); `info`.
+Hermes's session user, else the computer's one owner); `voice/<op>` (voice); `routing/<op>` (Auto effort); `info`.
 There is no device registration route.
 
 ## Settings (`plugins.entries.agents-cs.settings` in config.yaml)
 
-- `routing_mode`: `off` | `shadow` | `on`. Setting it (even to `off`) makes Model Routing available; the app switches
-  Auto model / Auto effort per bot. An existing `<home>/jev-routing-v2.sqlite` also counts as configured. Settings
-  under the retired plugins' names (`hermes-bots-cards`, `jev-routing`) are no longer read; the 2.x
-  `plugins.entries.hermes-bots.settings` is, while `agents-cs` has none (the connector copies it over when it moves a
-  computer to this plugin).
-- `routing_key_file`: OpenRouter key for Jev's classifier; default `secrets/jev-openrouter-api-key` under the Hermes
-  home. No key means routing is unavailable (the chat keeps its model), never an error.
-- `card_guard`: `off` | `shadow` | `on`, and `card_guard_key_file` (default: routing's key above).
+- `routing_key_file`: OpenRouter key for Auto effort's classifier; default `secrets/jev-openrouter-api-key` under the
+  profile's Hermes home, then the root's. No key means Auto effort is unavailable (the app hides it), never an error.
+
+Settings under the retired plugins' names (`hermes-bots-cards`, `jev-routing`) are no longer read; the 2.x
+`plugins.entries.hermes-bots.settings` is, while `agents-cs` has none (the connector copies it over when it moves a
+computer to this plugin). `routing_mode`, `card_guard` and `card_guard_key_file` were removed on 2026-10-26 (Model
+Routing's model switching and the card guard are gone) and are ignored where they remain.
 
 ## Where it keeps things
 

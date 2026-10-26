@@ -73,7 +73,7 @@ class ManifestTests(unittest.TestCase):
             self.assertTrue((ROOT / name).is_file(), name)
         self.assertEqual(len(listed), len(set(listed)))
         for must in ("__init__.py", "cards/__init__.py", "cards/alerts.py", "cards/notify.py", "mobile/events.py", "mobile/outbox.py",
-                     "mobile/sealed.py", "routing/runtime_v2.py"):
+                     "mobile/sealed.py", "routing/effort.py"):
             self.assertIn(must, listed)
         # The files only the dashboard (hermes serve) imports never need the gateway restarted.
         for serve_only in ("mobile/routes.py", "mobile/scan.py", "mobile/usage.py", "voice/routes.py", "dashboard/plugin_api.py"):
@@ -81,10 +81,14 @@ class ManifestTests(unittest.TestCase):
 
     def test_provides_the_union_of_the_modules(self):
         data = manifest()
-        self.assertTrue({"hermes_card_form", "hermes_task_wait", "jev_review"} <= set(data["provides_tools"]))
-        self.assertTrue({"transform_llm_output", "on_session_end", "api_request_error"} <= set(data["provides_hooks"]))
+        self.assertTrue({"hermes_card_form", "hermes_task_wait"} <= set(data["provides_tools"]))
+        self.assertTrue({"transform_llm_output", "pre_llm_call"} <= set(data["provides_hooks"]))
         self.assertEqual(data["provides_middleware"], ["llm_request"])
-        self.assertEqual(set(data["provides_skills"]), {"native-cards", "jev-routing"})
+        self.assertEqual(set(data["provides_skills"]), {"native-cards"})
+        # Model Routing's model switching, jev_review and the card guard are gone (2026-10-26).
+        self.assertNotIn("jev_review", data["provides_tools"])
+        self.assertFalse({"on_session_end", "api_request_error"} & set(data["provides_hooks"]))
+        self.assertFalse({"routing_mode", "card_guard", "card_guard_key_file"} & set(data["config_schema"]))
 
     def test_attribution_is_kept(self):
         self.assertIn("Apache License", (ROOT / "LICENSE").read_text())
@@ -106,7 +110,7 @@ class GuardedLoadingTests(unittest.TestCase):
     def test_every_module_registers(self):
         ctx = Ctx()
         root.register(ctx)
-        self.assertEqual(root.STATUS, {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "off"})
+        self.assertEqual(root.STATUS, {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "ok"})
         self.assertIn("hermes_card_chart", ctx.tools)
         self.assertIn("native-cards", ctx.skills)
         self.assertIn("transform_llm_output", ctx.hooks)
@@ -123,24 +127,22 @@ class GuardedLoadingTests(unittest.TestCase):
         with patch.object(root.importlib, "import_module", side_effect=fake):
             root.register(ctx)
         self.assertEqual(root.STATUS["cards"], "error: ImportError: cards is broken")
-        self.assertEqual((root.STATUS["mobile"], root.STATUS["voice"], root.STATUS["routing"]), ("ok", "ok", "off"))
+        self.assertEqual((root.STATUS["mobile"], root.STATUS["voice"], root.STATUS["routing"]), ("ok", "ok", "ok"))
         self.assertEqual(ctx.tools, {})  # nothing of the failed module is half-registered
 
     def test_a_module_that_fails_to_register_does_not_stop_the_next(self):
         voice = importlib.import_module(root.__name__ + ".voice")
         with patch.object(voice, "register", side_effect=RuntimeError("no voice today")):
             ctx = Ctx()
-            with patch.object(root, "module_enabled", return_value=True) as enabled, \
-                    patch.object(importlib.import_module(root.__name__ + ".routing"), "register") as routing:
+            with patch.object(importlib.import_module(root.__name__ + ".routing"), "register") as routing:
                 root.register(ctx)
         self.assertEqual(root.STATUS["voice"], "error: RuntimeError: no voice today")
         self.assertEqual((root.STATUS["cards"], root.STATUS["mobile"], root.STATUS["routing"]), ("ok", "ok", "ok"))
         routing.assert_called_once_with(ctx)
         self.assertIn("hermes_card_chart", ctx.tools)
-        enabled.assert_called()
 
     def test_register_never_raises(self):
-        with patch.object(root, "module_enabled", side_effect=RuntimeError("config unreadable")):
+        with patch.object(root.importlib, "import_module", side_effect=RuntimeError("import machinery broken")):
             root.register(Ctx())
         self.assertTrue(all(v.startswith("error") for v in root.STATUS.values()))
 
@@ -176,16 +178,15 @@ class InfoAndRoutesTests(unittest.TestCase):
     def test_info(self):
         info = self.client(plugin_api("info")).get("/api/plugins/agents-cs/info").json()
         self.assertEqual((info["name"], info["version"]), ("agents-cs", root.VERSION))
-        self.assertEqual(info["modules"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "off"})
+        self.assertEqual(info["modules"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "ok"})
         self.assertIn("hermes_version", info)
 
     def test_every_old_subpath_is_kept_under_the_one_prefix(self):
         paths = self.paths(plugin_api("paths"))
         for subpath in ("/forms/{request_id}/submit", "/forms/{request_id}", "/decisions", "/decisions/close",
                         "/kanban/specify/{task_id}", "/kanban/decompose/{task_id}", "/kanban/prepare-new/{task_id}",
-                        "/kanban/creation-settings", "/tasks/board", "/voice/{operation}", "/info"):
+                        "/kanban/creation-settings", "/tasks/board", "/voice/{operation}", "/routing/{operation}", "/info"):
             self.assertIn(subpath, paths)
-        self.assertNotIn("/routing/{operation}", paths, "routing is off unless configured")
 
     def test_the_mobile_routes_live_under_mobile_and_nothing_else_of_the_bridge_survives(self):
         paths = self.paths(plugin_api("mobile"))
@@ -194,12 +195,6 @@ class InfoAndRoutesTests(unittest.TestCase):
         for gone in ("/mobile/devices", "/devices", "/health", "/internal/nudge", "/internal/approvals", "/usage", "/reads"):
             self.assertNotIn(gone, paths)
         self.assertFalse([p for p in paths if p.startswith("/internal")])
-
-    def test_routing_routes_and_status_appear_once_configured(self):
-        (Path(self.home.name) / "config.yaml").write_text("plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: shadow\n")
-        api = plugin_api("routing")
-        self.assertIn("/routing/{operation}", self.paths(api))
-        self.assertEqual(self.client(api).get("/api/plugins/agents-cs/info").json()["modules"]["routing"], "ok")
 
     def test_a_module_whose_routes_fail_is_reported_and_the_others_are_served(self):
         real = importlib.import_module
@@ -238,11 +233,6 @@ for name in ("hermes_constants", "hermes_cli.config", "agent.turn_finalizer", "t
 spec = importlib.util.spec_from_file_location("agents_cs", os.path.join(root_dir, "__init__.py"),
                                               submodule_search_locations=[root_dir])
 module = importlib.util.module_from_spec(spec); sys.modules["agents_cs"] = module; spec.loader.exec_module(module)
-if os.environ.get("PROBE_ROUTING") == "1":
-    import types
-    config = types.ModuleType("hermes_cli.config")
-    config.load_config_readonly = lambda: {"plugins": {"entries": {"agents-cs": {"settings": {"routing_mode": "on"}}}}}
-    sys.modules["hermes_cli"] = types.ModuleType("hermes_cli"); sys.modules["hermes_cli.config"] = config
 class Ctx:
     profile_name = "friday"
     def register_tool(self, *a, **k): pass
@@ -270,15 +260,10 @@ class LazyImportTests(unittest.TestCase):
 
     def test_register_imports_none_of_the_heavy_modules(self):
         out = self.probe()
-        self.assertEqual(out["status"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "off"})
+        self.assertEqual(out["status"], {"cards": "ok", "mobile": "ok", "voice": "ok", "routing": "ok"})
         self.assertEqual(out["loaded"], [])
         self.assertEqual(out["voice"], [], "voice's code loads only with its routes")
         self.assertEqual(out["mobile"], [], "mobile's code loads only where an alert is written or a route is served")
-
-    def test_register_with_routing_on_still_imports_none_of_them(self):
-        out = self.probe(PROBE_ROUTING="1")
-        self.assertEqual(out["status"]["routing"], "ok", out)
-        self.assertEqual([m for m in out["loaded"] if m != "yaml"], [])  # routing may read config.yaml with yaml
 
 
 if __name__ == "__main__":

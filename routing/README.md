@@ -1,61 +1,45 @@
-# Jev routing 2.4 (the `routing` module of agents-cs)
+# Auto effort (the `routing` module of agents-cs)
 
-The plugin routes each turn itself (2.4): with Auto model and/or Auto effort on, its
-`llm_request` middleware sends that turn to the chosen slot model/effort inside the
-chat's provider. The app only writes the switches. See API_HANDOFF.md; the 2.3 plan/arm
-endpoints remain, deprecated, for older app builds.
+Auto effort picks Low, Medium or High reasoning for each message, on the chat's own model. The app switches it per bot
+(the default for its chats) and per chat; the plugin does the rest on Hermes. API: `API_HANDOFF.md`. Code: `effort.py`.
 
-- Small: available Luna, low; Medium: current configured Sol, medium; Big: Sol,
-  high. Slots are configurable among catalog-listed Codex Luna/Sol/Astra models;
-  coding slots cannot be Luna. Exact saved IDs never silently upgrade.
-- Baseline is the user's selected model, independent of the routed execution.
-- Routing off bypasses Jev. Known code is Medium/Big; uncertain code uses Big.
-- One 500 ms classification, no retries or queued classifier backlog. Secrets,
-  attachments and uncertainty have conservative fallbacks.
-- 2.4: model changes are applied per request by the plugin (`llm_request` middleware),
-  same provider only, never written to the chat. Pre-2.4 apps used `config.set --once`.
-- API reservations, revisions, idempotency, expiry and observed-request status are
-  shared across processes in a mode-0600 per-home owned SQLite store.
-- Small planned turns block non-allowlisted tools before execution. Approved
-  read-only names: web_search, web_extract, read_file. Blocked coding requires an
-  explicit Medium/Big continuation; it is never silently replayed.
-- A matching (2.3 app) plan bypasses server routing, preventing double calls.
-  Without a plan, the same v2 engine routes model and/or effort for Codex and Claude
-  chats per the switches, with explicit-pin protection on unmanaged chats.
-- Existing jev_review remains read-only passage/inbox/alert/transaction review.
+## How a turn is handled
 
-## Boundaries
+1. `pre_llm_call`: for a turn on the native app or dashboard (`tui`), `desktop` or `cli` with Auto effort on, the
+   person's message and up to four recent exchanges are masked (credentials, emails, phone numbers), trimmed, and sent
+   to Jev (`typesafe/jev-1.13` through OpenRouter's decisions API) in the background: one question, "how much reasoning
+   does this need", answered low, medium or high.
+2. `llm_request` middleware: the turn's first provider request waits for that answer, at most one second from the
+   turn's start (it usually takes ~0.2 s). A pick at least 60 % likely is applied to every request of the turn; a
+   Low pick for a message (or a "yes" to an offer) that sends, deletes, pays or the like becomes Medium.
+3. Only the effort field changes: Codex `reasoning.effort`, Claude `output_config.effort`. The model, provider,
+   messages and the chat's own settings are never touched or written. Thinking off, a provider without an effort
+   field, Hermes moving the turn to a fallback model, or the switch going off mid-turn leave the request as Hermes
+   built it.
 
-Server routes cover tui (native app, dashboard), desktop and cli turns; cron, kanban,
-gateways and voice are not routed. Hermes keeps one provider client per chat, so a route
-never crosses provider (Claude chat + OpenAI slots keeps its model; effort still applies).
-Hermes' session.info/usage keep reporting the chat's model; GET /turns has what was served.
-Legacy (2.3 app) plans: the app serializes sends and restores after its `--once` switch. Route targets (2.3): Claude subscription (`anthropic`) or OpenAI subscription (`openai-codex`) catalog models; Medium and Big refuse Luna and Haiku. Other providers stay manual picks.
+The turn is then recorded without content (`GET /turns`: the effort picked, the effort it replaced, why), which the app
+shows on the reply's work trail ("Auto effort · High").
 
-Cross-model routes require a conservative full input-token bound <=180,000.
-Without it the selected model is retained; coding on a selected Luna may pause.
-Native context budgeting and availability validation still run after switching.
+## When it does nothing
 
-Both Jev routing/reviews use OpenRouter Decisions, typesafe/jev-1.13. Key remains
-in `secrets/jev-openrouter-api-key` under the Hermes home (the profile's, then the root's; or the
-`routing_key_file` setting); never in app or artifacts. No key means routing is unavailable and the
-chat keeps its own model.
-Ordinary excerpts go through OpenRouter to TypeSafe; redaction is not anonymization.
-`<home>/jev.disabled` stops Jev calls. Routing off preserves manual reviews.
+Auto effort off for the chat (its own switch, else the bot's default); a chat with its own manual effort that the app
+doesn't manage (a pick on the desktop or in the CLI); a `/command`, a scheduled or system turn, or "think harder" /
+"use high reasoning"; an unsure, slow or failed classifier; no OpenRouter key. In every case the chat's own effort
+answers. Cron, Kanban, gateways and voice are never touched.
 
-## Verification
+## Key and data
 
-`python3 -m unittest discover -s scripts/jev -p 'test_*.py'`.
-On installed Hermes, `verify_v2_api.py plugin` checks a real isolated authenticated
-API mount, ownership, plans, actual middleware observations and native pre-tool
-blocking. `verify_v2_fallback_runtime.py plugin` checks v2 fallback profile isolation.
-Doctor confirms plugin discovery/registration. No private messages or actual tool
-side effects are needed. Native app E2E remains the app release gate.
+The key is `secrets/jev-openrouter-api-key` under the profile's Hermes home, then the root's, or the
+`routing_key_file` setting; never in the app. No key: `GET /capabilities` says `classifierAvailable: false` and the app
+hides Auto effort. Message excerpts go through OpenRouter to TypeSafe; masking is not anonymization.
 
-Keep backups before replacing plugin/config. Use SQLite backup for live v2 state.
-Rollback requires draining/reconciling pending --once turns before restoring the
-previous plugin. Keep later selected-model changes and policy state intact.
+The switches and the turn records live in `<home>/jev-routing-v2.sqlite` (mode 0600; the name it has had since the
+jev-routing plugin, whose `policy` and `sessions` rows are still read for their Auto effort switches).
 
-## Separate automatic controls
+## History
 
-Auto model and Auto effort have independent bot defaults and nullable chat overrides. Both defaults are off in production. Model-only retains manual effort; effort-only retains the chosen model. See API_HANDOFF.md for compatibility, manual selection and app requirements.
+Until 2026-10-26 this module was Model Routing: it also switched the model per turn (Small, Medium, Big slots),
+offered the read-only `jev_review` tool and the `jev-routing` skill. Those are gone; Auto model had never switched a
+model on the Mac mini. Auto effort had changed nothing either (424 turns): three questions all had to be 90 % sure,
+masking ran on serialized JSON and broke its escapes, and a pick equal to the chat's own effort was dropped. All three
+are fixed here (`tests/test_routing_effort.py`).

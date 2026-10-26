@@ -5,7 +5,7 @@ and keeps every subpath of the plugins it replaced; only the prefix changed:
     /api/plugins/hermes-bots-cards/<x>        ->  /api/plugins/agents-cs/<x>          (cards)
     (new in 2.0)                              ->  /api/plugins/agents-cs/mobile/<op>  (mobile: reads, replies, usage, kinds, view)
     /api/plugins/hermes-bots-voice/voice/<op> ->  /api/plugins/agents-cs/voice/<op>   (voice)
-    /api/plugins/jev-routing/routing/<op>     ->  /api/plugins/agents-cs/routing/<op> (routing, if configured)
+    /api/plugins/jev-routing/routing/<op>     ->  /api/plugins/agents-cs/routing/<op> (routing: Auto effort)
     GET /api/plugins/agents-cs/info                                                   (name, version, modules)
 
 Each module's router is imported inside its own guard: one that fails is left out and reported by ``/info``,
@@ -49,9 +49,6 @@ MODULES: dict[str, str] = {}
 
 def _mount(name: str) -> None:
     try:
-        if not _root.module_enabled(name, dashboard=True):
-            MODULES[name] = "off"
-            return
         module = importlib.import_module("%s.%s.routes" % (_PACKAGE, name))
         router.include_router(module.router)
         MODULES[name] = "ok"

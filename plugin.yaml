@@ -1,7 +1,7 @@
 name: agents-cs
-version: 3.4.3
+version: 3.5.0
 license: Apache-2.0
-description: "The Agents CS app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and optional Model Routing (routing). A module that fails to load is reported by /api/plugins/agents-cs/info; the others keep working."
+description: "The Agents CS app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and Auto effort (routing). A module that fails to load is reported by /api/plugins/agents-cs/info; the others keep working."
 author: "Clearspace"
 requires_hermes: ">=0.21.5"
 python_dependencies:
@@ -21,16 +21,12 @@ restart:
     - cards/coordinator.py
     - cards/creation.py
     - cards/cron_archive.py
-    - cards/guard.py
     - cards/notify.py
     - cards/relay.py
     - cards/store.py
     - cards/tasks.py
     - routing/__init__.py
-    - routing/classifier_io.py
-    - routing/jev.py
-    - routing/routing_v2.py
-    - routing/runtime_v2.py
+    - routing/effort.py
     - routing/settings.py
     - mobile/__init__.py
     - mobile/alerts.py
@@ -42,22 +38,10 @@ restart:
     - mobile/sealed.py
     - mobile/state.py
 config_schema:
-  routing_mode:
-    type: str
-    default: ""
-    description: "Model Routing, off unless set: off (the app may still switch Auto model/effort per bot), shadow (record decisions, change nothing) or on."
   routing_key_file:
     type: str
     default: ""
-    description: "Optional path to the OpenRouter key Jev's classifier uses; default secrets/jev-openrouter-api-key under the Hermes home. No key means routing is unavailable, never an error."
-  card_guard:
-    type: str
-    default: "off"
-    description: "off | shadow | on. Turns a reply that should have been a card into one before it is saved."
-  card_guard_key_file:
-    type: str
-    default: ""
-    description: "Optional path to the OpenRouter key the card guard uses; defaults to Jev's."
+    description: "Optional path to the OpenRouter key Auto effort's classifier uses; default secrets/jev-openrouter-api-key under the Hermes home. No key means Auto effort is unavailable, never an error."
 provides_tools:
   - hermes_task_wait
   - hermes_task_adjust
@@ -72,10 +56,8 @@ provides_tools:
   - hermes_card_selection
   - hermes_card_message
   - hermes_card_form_response
-  - jev_review
 provides_skills:
   - native-cards
-  - jev-routing
 provides_hooks:
   - post_tool_call
   - transform_tool_result
@@ -89,7 +71,5 @@ provides_hooks:
   - pre_approval_request
   - post_approval_response
   - post_llm_call
-  - on_session_end
-  - api_request_error
 provides_middleware:
   - llm_request

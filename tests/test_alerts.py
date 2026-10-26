@@ -59,10 +59,8 @@ class AlertEventTests(unittest.TestCase):
         manifest = (Path(plugin.__file__).parent.parent / "plugin.yaml").read_text()
         block = manifest.split("provides_hooks:")[1].split("provides_middleware:")[0]
         declared = {line.strip()[2:] for line in block.splitlines() if line.strip().startswith("- ")}
-        # The cards module's hooks are declared; the routing module's own two (on_session_end, api_request_error)
-        # are declared beside them, and registered only for a profile with routing configured.
-        self.assertLessEqual(set(hooks), declared)
-        self.assertEqual(declared - set(hooks), {"on_session_end", "api_request_error"})
+        # Every hook the plugin declares is one the cards module registers (routing's pre_llm_call is shared with it).
+        self.assertEqual(set(hooks), declared)
 
     def test_request_sends_redacted_bounded_command_and_session_identity(self):
         alerts.on_request(session_id="s1", session_key="k1", command="x" * 900, description="Do it", surface="gateway")

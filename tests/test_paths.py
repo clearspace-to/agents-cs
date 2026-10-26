@@ -72,17 +72,17 @@ class HomeResolutionTests(unittest.TestCase):
             self.assertEqual(store.FormStore().path, Path(tmp) / "hermes-bots-cards" / "forms.db")
             self.assertEqual(cron.Decided().path, Path(tmp) / "hermes-bots-cards" / "cron-archive.db")
             self.assertEqual(voice.default_path(), Path(tmp) / "hermes-bots-voice" / "voices.json")
-            routing = importlib.import_module(root.__name__ + ".routing.routing_v2")
+            routing = importlib.import_module(root.__name__ + ".routing.effort")
             self.assertEqual(routing.Store(tmp).path, Path(tmp) / "jev-routing-v2.sqlite")
 
 
 class SettingsAndSecretsTests(unittest.TestCase):
     CONFIG = {"plugins": {"entries": {
-        "agents-cs": {"settings": {"card_guard": "on", "card_guard_key_file": "/keys/jev"}},
-        "hermes-bots-cards": {"settings": {"card_guard": "shadow", "card_guard_key_file": "/legacy"}}}}}
+        "agents-cs": {"settings": {"routing_key_file": "/keys/jev"}},
+        "hermes-bots-cards": {"settings": {"routing_key_file": "/legacy"}}}}}
 
     def test_settings_come_only_from_this_plugins_entry(self):
-        self.assertEqual(paths.settings(self.CONFIG), {"card_guard": "on", "card_guard_key_file": "/keys/jev"})
+        self.assertEqual(paths.settings(self.CONFIG), {"routing_key_file": "/keys/jev"})
         retired = {"plugins": {"entries": {"hermes-bots-cards": {"settings": {"card_guard": "on"}},
                                            "jev-routing": {"settings": {"mode": "on"}}}}}
         self.assertEqual(paths.settings(retired), {}, "the 1.x plugin names are no longer read")
@@ -100,20 +100,21 @@ class SettingsAndSecretsTests(unittest.TestCase):
                 (profile / "secrets" / "jev-openrouter-api-key").write_text("profile")
                 self.assertEqual(paths.find_secret("jev-openrouter-api-key"), profile / "secrets" / "jev-openrouter-api-key")
 
-    def test_card_guard_reads_its_settings_and_falls_back_to_routings_key(self):
-        guard = importlib.import_module(root.__name__ + ".cards.guard")
-        with patch.object(paths, "config", return_value=self.CONFIG):
-            self.assertEqual(guard.mode(), "on")
-            self.assertEqual(str(guard._key_file()), "/keys/jev")
-        with patch.object(paths, "config", return_value={"plugins": {"entries": {"hermes-bots-cards": {"settings": {"card_guard": "shadow"}}}}}):
-            self.assertEqual(guard.mode(), "off")
+    def test_auto_effort_key_comes_from_the_setting_else_the_secrets_folder(self):
+        settings = importlib.import_module(root.__name__ + ".routing.settings")
         with tempfile.TemporaryDirectory() as tmp:
+            configured = Path(tmp) / "my-key"
+            configured.write_text("k")
+            given = {"plugins": {"entries": {"agents-cs": {"settings": {"routing_key_file": str(configured)}}}}}
+            with patch.object(paths, "config", return_value=given):
+                self.assertEqual(settings.key_file(), configured)
             key = Path(tmp) / "secrets" / "jev-openrouter-api-key"
             key.parent.mkdir()
             with patch.dict(sys.modules, fake_hermes(tmp, tmp)), patch.object(paths, "config", return_value={}):
-                self.assertIsNone(guard._key_file())
+                self.assertIsNone(settings.key_file())
                 key.write_text("k")
-                self.assertEqual(guard._key_file(), key, "the Jev key under secrets/, as routing finds it")
+                self.assertEqual(settings.key_file(), key, "the Jev key under secrets/")
+                self.assertEqual(settings.key_file(home=tmp), key, "asked for one home, as hermes serve does")
 
 
 if __name__ == "__main__":

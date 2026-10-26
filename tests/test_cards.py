@@ -58,11 +58,6 @@ EXAMPLES = {
 
 
 class CardSchemaTests(unittest.TestCase):
-    def test_worker_guard_cannot_bypass_task_policy(self):
-        with patch.dict('os.environ', {'HERMES_KANBAN_TASK': 't_fixture'}), patch.object(plugin.guard, 'run') as convert:
-            self.assertIsNone(plugin._guard('Please approve this again?', 'fixture-session'))
-            convert.assert_not_called()
-
     def test_skipped_delivery_does_not_reprompt_next_run(self):
         card = cards.render('message', EXAMPLES['message'])
         instruction = cards.delivery(card, attached=True)['instruction']

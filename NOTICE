@@ -8,4 +8,4 @@ This plugin is made of modules, each with its own attribution, all kept:
 - cards/NOTICE    cards, forms and tools adapted from bighelp-plugin (Apache-2.0, commit 34f2a16938ba69185a7f5ed9fa4a963f9a9fe1b4)
 - voice/NOTICE    live voice adapted from bighelp-plugin (Apache-2.0, same commit)
 - routing/SOURCE.md, routing/THIRD_PARTY.md, routing/licenses/
-                  Model Routing (MIT), informed by AlphaPerseii3000/jev-effort-router and kerpopule/hermes-jev-skills (MIT)
+                  Auto effort (MIT), informed by AlphaPerseii3000/jev-effort-router and kerpopule/hermes-jev-skills (MIT)

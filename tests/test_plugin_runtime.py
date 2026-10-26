@@ -27,10 +27,6 @@ except Exception:  # noqa: BLE001 - any import failure means no usable runtime h
     HERMES = False
 
 REQUIRED = os.environ.get("HERMES_COMPAT_REQUIRED") == "1"
-# Hooks only the routing module registers (declared in plugin.yaml, registered where routing is configured).
-OPTIONAL_ROUTING_HOOKS = {"on_session_end", "api_request_error"}
-
-
 def manifest_hooks(plugin: Path) -> list[str]:
     text = (plugin / "plugin.yaml").read_text()
     try:
@@ -50,8 +46,7 @@ class PluginRuntimeCompatibilityTests(unittest.TestCase):
         self.assertTrue(PLUGINS, "No plugin/agents-cs/plugin.yaml found (set AGENTS_CS_PLUGIN_DIR)")
 
     def test_plugin_doctor_loads_and_registers_every_plugin(self):
-        """Hermes's own doctor runs under a throwaway home of its own, so routing (an optional module, off
-        unless configured) is off here: its two hooks are declared but, correctly, not registered."""
+        """Hermes's own doctor, under a throwaway home of its own: every declared hook registers."""
         for plugin in PLUGINS:
             with self.subTest(plugin=plugin.name), tempfile.TemporaryDirectory(prefix="hermes-compat-") as home:
                 result = subprocess.run([sys.executable, "-c", """
@@ -65,17 +60,13 @@ print(json.dumps({"ok": report.ok, "report": report.format_text(),
                 report = json.loads(result.stdout.strip().splitlines()[-1])
                 self.assertTrue(report["ok"], report["report"])
                 for hook in manifest_hooks(plugin):
-                    if hook in OPTIONAL_ROUTING_HOOKS:
-                        continue
                     self.assertIn(hook, report["hooks"], f"{plugin.name}: {hook} did not register\n{report['report']}")
 
-    def test_routing_registers_through_hermes_when_configured(self):
-        """The routing module's tool, hooks and ``llm_request`` middleware against Hermes's real PluginContext,
-        in a throwaway home whose config turns routing on."""
+    def test_every_module_registers_through_hermes(self):
+        """Every tool, hook and the ``llm_request`` middleware (Auto effort) against Hermes's real PluginContext,
+        in a throwaway home."""
         for plugin in PLUGINS:
             with self.subTest(plugin=plugin.name), tempfile.TemporaryDirectory(prefix="hermes-compat-") as home:
-                (Path(home) / "config.yaml").write_text(
-                    "plugins:\n  entries:\n    agents-cs:\n      settings:\n        routing_mode: shadow\n")
                 result = subprocess.run([sys.executable, "-c", """
 import json, shutil, sys
 from pathlib import Path
@@ -93,7 +84,7 @@ print(json.dumps({"error": loaded.error, "tools": sorted(loaded.tools_registered
                 self.assertEqual(result.returncode, 0, result.stderr[-3000:])
                 report = json.loads(result.stdout.strip().splitlines()[-1])
                 self.assertFalse(report["error"], report)
-                self.assertIn("jev_review", report["tools"])
+                self.assertNotIn("jev_review", report["tools"])
                 self.assertIn("hermes_card_chart", report["tools"])
                 for hook in manifest_hooks(plugin):
                     self.assertIn(hook, report["hooks"], f"{hook} did not register: {report}")
