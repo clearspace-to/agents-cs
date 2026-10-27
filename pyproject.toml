@@ -1,6 +1,6 @@
 [project]
 name = "agents-cs-plugin"
-version = "3.7.0"
+version = "3.7.1"
 description = "The Agents CS plugin for Hermes: cards, mobile alerts, live voice and Auto effort. Installed into Hermes by the connector (hermes plugins install); this project only runs its tests."
 requires-python = ">=3.11"
 license = { text = "Apache-2.0" }
