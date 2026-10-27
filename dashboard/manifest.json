@@ -3,7 +3,7 @@
   "label": "Agents CS",
   "description": "Cards, forms, task routes, live voice and Auto effort for the Agents CS app. No dashboard tab.",
   "icon": "LayoutGrid",
-  "version": "3.6.1",
+  "version": "3.7.0",
   "task_experience": 2,
   "tab": {"path": "/agents-cs", "position": "end", "hidden": true},
   "entry": "dist/index.js",
