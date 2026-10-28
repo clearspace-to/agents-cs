@@ -106,6 +106,11 @@ class HermesContractTests(unittest.TestCase):
         source = (Path(executions.__file__).parent / "scheduler_delivery.py").read_text()
         self.assertIn("[str(source_home), job_id, str(run_id), str(home)]", source,
                       "Hermes changed how it keys a Bot Chat delivery; update cron_archive.delivery_id")
+        # mobile/cron_runs.py tells a local-<hash> run chat's job by the title Hermes gives it when the run ends.
+        scheduler = (Path(executions.__file__).parent / "scheduler.py").read_text()
+        self.assertIn('" ".join(job_name.split())[:60].strip()', scheduler, "Hermes changed a run chat's title; update cron_runs")
+        self.assertIn("f\"{_title_base} · {safe_strftime(_hermes_now(), '%b %d %H:%M')}\"", scheduler,
+                      "Hermes changed a run chat's title; update cron_runs")
 
     def test_hooks_are_still_valid(self):
         from hermes_cli.plugins import VALID_HOOKS

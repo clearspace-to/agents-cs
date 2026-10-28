@@ -23,7 +23,6 @@ result reached the main chat: no receipts, no matching by job name and time.
 """
 from __future__ import annotations
 
-import json
 import re
 import sqlite3
 import threading
@@ -71,65 +70,47 @@ def label(name: str, when: float | None) -> str:
     return f"{short} · {clock}"
 
 
-def _epoch(value: Any) -> float | None:
-    if isinstance(value, (int, float)):
-        return float(value)
-    try:
-        return datetime.fromisoformat(str(value)).timestamp()
-    except (TypeError, ValueError):
-        return None
-
-
 def _read_only(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
 
 
 def find_run(home: Path, name: str, body: str, *, now: float | None = None) -> dict[str, Any]:
-    """Which run produced this result: the job (by name), its chat (the cron chat whose last reply is
-    the result; else the job's newest chat of the last six hours) and its execution (the job's last one
-    started before that chat). Missing pieces are left empty; the relay still happens."""
+    """Which run produced this result: the job (by name), its chat (the job's cron chat of the last six hours
+    whose last reply is the result, else its newest) and its execution (``cron_runs.run_of``). Missing pieces
+    are left empty; the relay still happens."""
+    from ..mobile import cron_runs  # stdlib only, but mobile's code loads only where it's used
     now = time.time() if now is None else now
     found: dict[str, Any] = {"job_id": "", "run_session": "", "execution_id": "", "started_at": None}
-    try:
-        data = json.loads((home / "cron" / "jobs.json").read_text(encoding="utf-8"))
-        jobs = data.get("jobs", []) if isinstance(data, dict) else data
-        found["job_id"] = next((str(j["id"]) for j in jobs if isinstance(j, dict) and j.get("name") == name), "")
-    except (OSError, ValueError, TypeError):
-        pass
+    known = cron_runs.jobs(home)
+    found["job_id"] = next((job for job, job_name in known.items() if job_name == name), "")
     if not found["job_id"] or not (home / "state.db").is_file():
         return found
+    executions = cron_runs.runs(home / "cron" / "executions.db")
     wanted = body.strip()
     try:
         with closing(_read_only(home / "state.db")) as state:
-            chats = state.execute(
-                "SELECT id, started_at FROM sessions WHERE id LIKE ? AND started_at >= ? "
-                "ORDER BY started_at DESC LIMIT 10", (f"cron_{found['job_id']}_%", now - 6 * 3600)).fetchall()
-            for chat, started in chats:
-                last = state.execute(
-                    "SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND content IS NOT NULL "
-                    "AND trim(content) != '' ORDER BY id DESC LIMIT 1", (chat,)).fetchone()
-                if last and str(last[0]).strip() == wanted:
-                    found["run_session"], found["started_at"] = chat, _epoch(started)
-                    break
-            else:
-                if chats:
-                    found["run_session"], found["started_at"] = chats[0][0], _epoch(chats[0][1])
+            chats = []
+            for chat, started, title in state.execute(
+                    "SELECT id, started_at, title FROM sessions WHERE source = 'cron' AND started_at BETWEEN ? AND ? "
+                    "ORDER BY started_at DESC", (now - 6 * 3600, now)).fetchall():
+                if cron_runs.job_of(chat, started, title, executions, known) == found["job_id"]:
+                    chats.append((chat, started, cron_runs.run_of(chat, started, title, executions, known)))
+            chats = chats[:10]
+            pick = next((entry for entry in chats if _last_reply(state, entry[0]) == wanted), chats[0] if chats else None)
     except sqlite3.Error:
         return found
-    executions = home / "cron" / "executions.db"
-    if found["run_session"] and executions.is_file():
-        try:
-            with closing(_read_only(executions)) as runs:
-                rows = runs.execute("SELECT id, started_at FROM executions WHERE job_id = ? AND started_at IS NOT NULL",
-                                    (found["job_id"],)).fetchall()
-        except sqlite3.Error:
-            rows = []
-        limit = (found["started_at"] or now) + 5
-        best = max(((start, rid) for rid, raw in rows if (start := _epoch(raw)) is not None and start <= limit),
-                   default=None)
-        if best:
-            found["started_at"], found["execution_id"] = best[0], str(best[1])
+    if pick:
+        chat, started, run = pick
+        found["run_session"], found["started_at"] = chat, cron_runs.epoch(started)
+        if run:
+            found["started_at"], found["execution_id"] = run[0], run[1]
     return found
+
+
+def _last_reply(state: sqlite3.Connection, chat: str) -> str | None:
+    row = state.execute("SELECT content FROM messages WHERE session_id = ? AND role = 'assistant' AND content IS NOT NULL "
+                        "AND trim(content) != '' ORDER BY id DESC LIMIT 1", (chat,)).fetchone()
+    return str(row[0]).strip() if row else None
 
 
 def begin(session_id: str, user_message: Any, *, home: Path | None = None, relays: RelayLog | None = None,

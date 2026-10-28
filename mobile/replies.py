@@ -16,9 +16,8 @@ import re
 import sqlite3
 import threading
 import time
-from datetime import datetime
 
-from . import home
+from . import cron_runs, home
 from .sealed import PREVIEW_LIMIT, preview  # noqa: F401  the banner preview, shared with the Claude Code host
 
 
@@ -571,7 +570,6 @@ def display_name(profile):
 SCHEDULED_HOLD = 10        # the run's bookkeeping lands just after its reply
 SCHEDULED_MAX_WAIT = 15 * 60  # a hand-off stuck this long rings anyway, saying so (Mark, 2026-10-13)
 STUCK_NOTE = "Main chat stuck 15+ min, so this run's result is here instead. "
-_CRON_CHAT = re.compile(r"^cron_([0-9a-f]+)_\d{8}_\d{6}$")
 
 
 def cards_db(state_db):
@@ -600,38 +598,25 @@ def run_handoff(state_db, chat):
     or the run was silent), "waiting" (the run is still going, or its result is on its way to the main
     chat) or "released" (it isn't going to the main chat).
 
-    A run chat is ``cron_<job>_<local time>`` and belongs to that job's last execution started before it
-    (``cron/executions.db``). The relay ledger (``hermes-bots-cards/forms.db``) is the proof of delivery."""
-    match = _CRON_CHAT.match(chat or "")
-    if not match:
-        return "released"
+    Which execution a run chat belongs to is ``cron_runs.run_of`` (Hermes's ``cron/executions.db``). The relay
+    ledger (``hermes-bots-cards/forms.db``) is the proof of delivery."""
     if relayed(state_db, chat):
         return "delivered"
-    job, folder = match.group(1), Path(state_db).parent.resolve()
+    folder = Path(state_db).parent.resolve()
     executions = folder / "cron" / "executions.db"
     if not executions.is_file() or not Path(state_db).is_file():
         return "released"
     try:
         with closing(sqlite3.connect(f"file:{state_db}?mode=ro", uri=True, timeout=5)) as state:
-            row = state.execute("SELECT started_at FROM sessions WHERE id=?", (chat,)).fetchone()
-        with closing(sqlite3.connect(f"file:{executions}?mode=ro", uri=True, timeout=5)) as runs:
-            rows = runs.execute("SELECT id, status, delivery_outcome, started_at FROM executions "
-                                "WHERE job_id=? AND started_at IS NOT NULL", (job,)).fetchall()
+            row = state.execute("SELECT started_at, title FROM sessions WHERE id=? AND source='cron'", (chat,)).fetchone()
     except sqlite3.Error:
         return "released"
     if not row or row[0] is None:
         return "released"
-    chat_start, best = float(row[0]), None
-    for execution, status, outcome, started in rows:
-        try:
-            start = datetime.fromisoformat(started).timestamp()
-        except (TypeError, ValueError):
-            continue
-        if start <= chat_start + 5 and (best is None or start > best[0]):
-            best = (start, execution, status, outcome)
-    if best is None:
+    run = cron_runs.run_of(chat, row[0], row[1], cron_runs.runs(executions), cron_runs.jobs(folder))
+    if run is None:
         return "released"
-    _, _execution, status, outcome = best
+    _, _execution, _job, status, outcome = run
     if status in ("claimed", "running"):
         return "waiting"
     if status != "completed":

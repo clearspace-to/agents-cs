@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import unittest
 from contextlib import closing
+from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 
@@ -354,19 +355,22 @@ class ScheduledRunTests(MobileCase):
         (root / "hermes-bots-cards").mkdir()
         state_db, job = home / "state.db", "b53527d462af"
         with closing(sqlite3.connect(state_db)) as c, c:
-            c.execute("CREATE TABLE sessions(id TEXT,started_at REAL)")
+            c.execute("CREATE TABLE sessions(id TEXT,source TEXT,started_at REAL,title TEXT)")
         with closing(sqlite3.connect(home / "cron" / "executions.db")) as c, c:
             c.execute("CREATE TABLE executions(id TEXT,job_id TEXT,status TEXT,delivery_outcome TEXT,started_at TEXT)")
         with closing(sqlite3.connect(root / "hermes-bots-cards" / "forms.db")) as c, c:
             c.execute("CREATE TABLE relays(run_session TEXT PRIMARY KEY, replied_at INTEGER)")
 
-        def run(eid, start, status="completed", outcome="queued", relay=None):
-            chat = f"cron_{job}_{eid}0000_000000"
+        (home / "cron" / "jobs.json").write_text(json.dumps({"jobs": [{"id": job, "name": "Ghost: brief"},
+                                                                       {"id": "c0ffee", "name": "Ghost: other"}]}))
+
+        def run(eid, start, status="completed", outcome="queued", relay=None, chat=None, opened=6, title=None, of=job):
+            chat = chat or f"cron_{job}_{eid}0000_000000"
             with closing(sqlite3.connect(state_db)) as c, c:
-                c.execute("INSERT INTO sessions VALUES(?,?)", (chat, start + 6))
+                c.execute("INSERT INTO sessions VALUES(?,'cron',?,?)", (chat, start + opened, title))
             with closing(sqlite3.connect(home / "cron" / "executions.db")) as c, c:
                 c.execute("INSERT INTO executions VALUES(?,?,?,?,?)",
-                          (eid, job, status, outcome, replies.datetime.fromtimestamp(start).astimezone().isoformat()))
+                          (eid, of, status, outcome, datetime.fromtimestamp(start).astimezone().isoformat()))
             if relay is not None:
                 with closing(sqlite3.connect(root / "hermes-bots-cards" / "forms.db")) as c, c:
                     c.execute("INSERT INTO relays VALUES(?,?)", (chat, relay))
@@ -378,7 +382,17 @@ class ScheduledRunTests(MobileCase):
                  run("1005", t + 2400, status="running", outcome=None): "waiting",
                  run("1006", t + 3000, outcome="delivered", relay=None): "waiting",
                  run("1007", t + 3600, status="failed", outcome=None): "released", run("1008", t + 4200, outcome="failed"): "released",
-                 run("1009", t + 4800, outcome="not_configured"): "released", "not-a-run": "released"}
+                 run("1009", t + 4800, outcome="not_configured"): "released", "not-a-run": "released",
+                 # Since Hermes's 2026-10-24 update a run's chat is local-<hash>, opened just after its execution starts
+                 run("2001", t + 5400, outcome="suppressed", chat="local-silent", opened=0.03): "delivered",
+                 run("2002", t + 6000, chat="local-busy", opened=0.03, title="Ghost: brief · Oct 28 10:00"): "waiting",
+                 run("2003", t + 6600, status="failed", outcome=None, chat="local-failed", opened=0.02): "released",
+                 run("2004", t + 7200, chat="local-relayed", opened=0.02, relay=int(t) + 7300): "delivered",
+                 run("2005", t + 7800, outcome="not_configured", chat="local-orphan", opened=30): "released"}
+        # Two jobs fire together: the title says which run the chat is.
+        cases[run("3001", t + 9000.3, outcome="suppressed", of="c0ffee", chat="local-other", opened=0.03)] = "delivered"
+        cases[run("3002", t + 9000, outcome="failed", chat="local-twin", opened=0.35,
+                  title="Ghost: brief · Oct 28 12:00 #2")] = "released"
         for chat, expected in cases.items():
             self.assertEqual(replies.run_handoff(state_db, chat), expected, chat)
         self.assertEqual(replies.cards_db(root / "state.db"), (root / "hermes-bots-cards" / "forms.db").resolve())

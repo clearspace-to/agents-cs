@@ -49,8 +49,8 @@ class HomeMixin:
         self.runs = sqlite3.connect(self.home / "cron" / "executions.db")
         self.runs.execute("CREATE TABLE executions (id TEXT, job_id TEXT, status TEXT, delivery_outcome TEXT, started_at TEXT)")
 
-    def make_run(self, session, start, reply, execution="exec1"):
-        self.state.execute("INSERT INTO sessions VALUES (?, 'cron', ?, NULL)", (session, start + 6))
+    def make_run(self, session, start, reply, execution="exec1", opened=6, title=None):
+        self.state.execute("INSERT INTO sessions VALUES (?, 'cron', ?, ?)", (session, start + opened, title))
         self.state.execute("INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)", (session, reply))
         self.state.commit()
         self.runs.execute("INSERT INTO executions VALUES (?, ?, 'completed', 'delivered', ?)",
@@ -80,6 +80,25 @@ class FindRunTests(HomeMixin, unittest.TestCase):
         self.make_run(f"cron_{JOB}_20261014_090000", NOW - 60, "Slightly different text")
         found = relay.find_run(self.home, NAME, "Two items", now=NOW)
         self.assertEqual(found["run_session"], f"cron_{JOB}_20261014_090000")
+
+    def test_finds_a_run_chat_named_the_way_hermes_names_them_since_2026_10_24(self):
+        """A local-<hash> chat with the job only in its title: the result's label keeps its time (Windy, 2026-10-28)."""
+        self.make_run("local-yesterday", NOW - 86400, "Yesterday's items", execution="e0", opened=0.03,
+                      title=f"{NAME} · Oct 13 09:00")
+        self.make_run("local-today", NOW - 60, "Two items need you.", execution="e1", opened=0.03,
+                      title=f"{NAME} · Oct 14 09:00")
+        self.make_run("local-other", NOW - 60, "Two items need you.", execution="e2", opened=0.03,
+                      title="Elsewhere · Oct 14 09:00")
+        found = relay.find_run(self.home, NAME, "Two items need you.", now=NOW)
+        self.assertEqual((found["run_session"], found["execution_id"]), ("local-today", "e1"))
+        self.assertAlmostEqual(found["started_at"], NOW - 60)
+
+    def test_a_run_whose_execution_hermes_dropped_is_still_found_by_its_title(self):
+        self.state.execute("INSERT INTO sessions VALUES ('local-pruned', 'cron', ?, ?)", (NOW - 60, f"{NAME} · Oct 14 09:00"))
+        self.state.execute("INSERT INTO messages (session_id, role, content) VALUES ('local-pruned', 'assistant', 'Two items')")
+        self.state.commit()
+        found = relay.find_run(self.home, NAME, "Two items", now=NOW)
+        self.assertEqual((found["run_session"], found["execution_id"]), ("local-pruned", ""))
 
     def test_unknown_job_or_no_chat_leaves_the_run_empty(self):
         self.assertEqual(relay.find_run(self.home, "Nobody: job", "x", now=NOW)["job_id"], "")

@@ -45,14 +45,14 @@ class SweepTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def run_(self, execution_id, start, *, status="completed", outcome="delivered", chat_after=6.0,
-             reply="DECISIONS FOR MARK", relayed=True, replied=True, job=JOB):
+             reply="DECISIONS FOR MARK", relayed=True, replied=True, job=JOB, chat=None, title=None):
         self.executions.execute("INSERT INTO executions VALUES (?, ?, ?, ?, ?)",
                                 (execution_id, job, status, outcome, iso(start)))
         session_id = None
         if chat_after is not None:
-            session_id = f"cron_{job}_{execution_id}"
-            self.state.execute("INSERT INTO sessions (id, source, started_at, ended_at, archived) VALUES (?, 'cron', ?, ?, 0)",
-                               (session_id, start + chat_after, start + 30))
+            session_id = chat or f"cron_{job}_{execution_id}"
+            self.state.execute("INSERT INTO sessions (id, source, started_at, ended_at, archived, title) "
+                               "VALUES (?, 'cron', ?, ?, 0, ?)", (session_id, start + chat_after, start + 30, title))
             self.state.execute("INSERT INTO messages (session_id, role, content) VALUES (?, 'assistant', ?)",
                                (session_id, reply))
             if relayed:
@@ -94,6 +94,24 @@ class SweepTests(unittest.TestCase):
                            (f"cron_{JOB}_extra", NOW - 3500, NOW - 3400))
         self.state.commit()
         self.assertEqual(self.sweep(), [])
+
+    def test_runs_in_chats_named_the_way_hermes_names_them_since_2026_10_24(self):
+        """local-<hash> chats: the run is the execution started just before the chat, the title naming the job."""
+        (self.home / "cron" / "jobs.json").write_text(
+            '{"jobs": [{"id": "%s", "name": "Friday: weekly brief"}, {"id": "c0ffee", "name": "Friday: other"}]}' % JOB)
+        relayed = self.run_("e1", NOW - 7200, chat="local-relayed", chat_after=0.03, title="Friday: weekly brief · Oct 13 18:00")
+        silent = self.run_("e2", NOW - 3600, outcome="suppressed", relayed=False, reply="[SILENT]",
+                           chat="local-silent", chat_after=0.03)
+        empty = self.run_("e3", NOW - 1800, outcome="suppressed", relayed=False, chat="local-empty", chat_after=0.02)
+        self.run_("e4", NOW - 900, outcome="delivered", relayed=False, chat="local-elsewhere", chat_after=0.02,
+                  title="Friday: weekly brief · Oct 13 19:45")
+        self.run_("e5", NOW - 600, outcome="suppressed", relayed=False, chat="local-late", chat_after=30)
+        self.assertEqual(sorted(self.sweep()), sorted([relayed, silent, empty]))
+
+    def test_older_runs_are_swept_when_asked_to_look_further_back(self):
+        chat = self.run_("old", NOW - 4 * 86400)
+        self.assertEqual(cron_archive.sweep(self.home, now=NOW, decided=self.decided, relays=self.relays, lookback=5 * 86400,
+                                            archive=lambda home, sid: self.archived.append(sid) or True), [chat])
 
     def test_a_run_is_decided_once_so_unarchiving_sticks(self):
         chat = self.run_("e1", NOW - 3600)

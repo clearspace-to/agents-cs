@@ -6,8 +6,8 @@ Mark reads it in the main chat, so the run is archived once that is certain. Two
 - the run's result was relayed into a main chat and the reply saved (``store.RelayLog``, written by
   ``relay.py`` on the hand-off turn; ``replied_at`` set when the reply was stored); or
 - the run was silent: ``executions.delivery_outcome = suppressed`` for a completed execution, and the
-  job's one chat of that run (``cron_<job>_<local time>``, started between the run's start and the
-  job's next run).
+  job's one chat of that run (``mobile/cron_runs.py`` tells a chat's job; started between the run's start
+  and the job's next run).
 
 Either way the chat must exist, be unarchived and not open with ``[CRON_FAILURE]``. Anything else
 (failed, still pending, delivered elsewhere, no or several chats) stays in Scheduled. Each run is
@@ -26,7 +26,6 @@ import sqlite3
 import threading
 import time
 from contextlib import closing
-from datetime import datetime
 from pathlib import Path
 
 try:
@@ -89,13 +88,6 @@ def _read_only(path: Path) -> sqlite3.Connection:
     return sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
 
 
-def _epoch(value: str) -> float | None:
-    try:
-        return datetime.fromisoformat(value).timestamp()
-    except (TypeError, ValueError):
-        return None
-
-
 class Decided:
     """Runs already decided, so an unarchived run stays unarchived. Shared by every process and profile."""
 
@@ -127,34 +119,33 @@ def _reported_failure(state: sqlite3.Connection, session_id: str) -> bool:
 
 
 def sweep(home, *, now: float | None = None, archive=_archive, decided: Decided | None = None,
-          relays: RelayLog | None = None) -> list[str]:
-    """Archive this home's delivered and silent runs from the last two days; returns the chats archived."""
+          relays: RelayLog | None = None, lookback: float = LOOKBACK) -> list[str]:
+    """Archive this home's delivered and silent runs from the last two days (``lookback``); returns the chats
+    archived."""
+    from ..mobile import cron_runs  # stdlib only, but mobile's code loads only where it's used
     home = Path(home).resolve()
     executions_db, state_db = home / "cron" / "executions.db", home / "state.db"
     if not executions_db.is_file() or not state_db.is_file():
         return []
     now = time.time() if now is None else now
-    since = now - LOOKBACK
+    since = now - lookback
     decided = decided or Decided()
     relays = relays or RelayLog()
     seen = decided.seen(str(home))
 
-    with closing(_read_only(executions_db)) as con:
-        rows = con.execute("SELECT id, job_id, status, delivery_outcome, started_at FROM executions "
-                           "WHERE started_at IS NOT NULL").fetchall()
+    executions = [run for run in cron_runs.runs(executions_db) if run[0] >= since - 86400]
     runs: dict[str, list] = {}
-    for execution_id, job_id, status, outcome, started in rows:
-        start = _epoch(started)
-        if start is not None and start >= since - 86400:
-            runs.setdefault(job_id, []).append((start, execution_id, status, outcome or ""))
-    by_execution = {execution_id: status for _, execution_id, status, _ in
-                    (run for job_runs in runs.values() for run in job_runs)}
+    for start, execution_id, job_id, status, outcome in executions:
+        runs.setdefault(job_id, []).append((start, execution_id, status, outcome))
+    by_execution = {run[1]: run[3] for run in executions}
+    known = cron_runs.jobs(home)
 
     archived = []
     with closing(_read_only(state_db)) as state:
         chats = {row[0]: row for row in state.execute(
-            "SELECT id, started_at, ended_at, archived FROM sessions WHERE source = 'cron' AND started_at >= ?",
+            "SELECT id, started_at, ended_at, archived, title FROM sessions WHERE source = 'cron' AND started_at >= ?",
             (since - 86400,)).fetchall()}
+        job_of = {chat: cron_runs.job_of(chat, row[1], row[4], executions, known) for chat, row in chats.items()}
 
         def archive_chat(session_id: str, execution_id: str) -> None:
             chat = chats.get(session_id)
@@ -173,12 +164,11 @@ def sweep(home, *, now: float | None = None, archive=_archive, decided: Decided 
         # Silent: nothing was sent anywhere, and exactly one chat of that job belongs to the run.
         for job_id, job_runs in runs.items():
             job_runs.sort()
-            prefix = f"cron_{job_id}_"
             for index, (start, execution_id, status, outcome) in enumerate(job_runs):
                 if start < since or status != "completed" or outcome != "suppressed" or execution_id in seen:
                     continue
                 end = job_runs[index + 1][0] if index + 1 < len(job_runs) else float("inf")
-                matches = [c for c in chats.values() if c[0].startswith(prefix) and start - 5 <= (c[1] or 0) < end]
+                matches = [c for c in chats.values() if job_of[c[0]] == job_id and start - 5 <= (c[1] or 0) < end]
                 if len(matches) == 1:
                     archive_chat(matches[0][0], execution_id)
     return archived
