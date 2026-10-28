@@ -29,7 +29,9 @@ def scan(con, profile, path, now=None) -> int:
     with index.lock:
         index.update()
         new = index.take()
-        through = index.last  # Badge/read refreshes may advance the shared index while this batch queues.
+        # Badge/read refreshes may advance the shared index while this batch queues. Not past an open turn's
+        # provisional answer, which alerts when the turn ends in silence (replies.PROVISIONAL).
+        through = index.settled()
     cursor = con.execute("SELECT row_id FROM cursors WHERE profile=?", (profile,)).fetchone()
     if cursor is None:
         con.execute("INSERT INTO cursors VALUES (?,?)", (profile, through))

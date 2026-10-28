@@ -212,27 +212,58 @@ REPLY_KINDS = {None, "summary"}
 AUTONOMOUS_SOURCES = {"cron", "webhook"}
 
 
+# Hermes's verify-on-stop gate (agent/turn_stop_gates.py) stores an answer as provisional, nudges the bot to check
+# its work, and lets whatever it says next stand as the reply, a silence marker included: Friday's answer to "do
+# these dates work" was dropped for a [SILENT] (26 answers in a month, 2026-10-27). The next reply supersedes a
+# provisional answer, as Hermes and the live app treat it; silence, or no reply before the next prompt, keeps it.
+PROVISIONAL = {"verification_required", "verify_hook_continue"}
+PROVISIONAL_REACH = 1000  # rows of a bot's database after which an open turn's answer stops holding the alert cursor
+
+
+def finish(row):
+    """A row's finish_reason; None for a row read without it."""
+    return row["finish_reason"] if "finish_reason" in row.keys() else None
+
+
+def provisional_answer(row):
+    """A provisional answer with text, not a silence marker or a note beside a tool call."""
+    return (row["role"] == "assistant" and finish(row) in PROVISIONAL
+            and bool((row["content"] or "").strip()) and not has_tool_calls(row["tool_calls"])
+            and not is_silence(row["content"]))
+
+
 def message_kinds(rows, autonomous=False):
     """{row_id: kind} for one chat's rows in order. The person's own messages and the bot's replies
     to them get no kind."""
-    return label_rows(rows, autonomous)[0]
+    return {rid: kind for rid, kind in label_rows(rows, autonomous)[0].items() if kind}
 
 
-def label_rows(rows, autonomous=False, answering=None):
+def label_rows(rows, autonomous=False, answering=None, provisional=None):
     """``message_kinds`` that can carry on: starts from the kind the last prompt before ``rows`` passed on
-    (``answering``) and returns ``(kinds, answering)`` after the last row, so a cache labels each row once."""
+    (``answering``) and the provisional answer still waiting for its turn's end, and returns ``(kinds, answering,
+    provisional)`` after the last row, so a cache labels each row once. A provisional answer is a tool step until
+    the turn ends in silence; then ``kinds`` maps it to None, a reply again, which a cache must apply."""
     kinds = {}
     for row in rows:
         if row["role"] == "user":
+            if provisional is not None:
+                kinds[provisional] = None
+            provisional = None
             kind = prompt_kind(row["content"], row["display_kind"])
             answering = answers(row["content"], row["display_kind"])
         elif row["role"] == "assistant":
             kind = assistant_kind(row, answering, autonomous)
+            if kind is None and provisional_answer(row):
+                kind, provisional = "tools", row["id"]
+            elif provisional is not None and finish(row) == "stop":
+                if kind == "silent":
+                    kinds[provisional] = None
+                provisional = None
         else:
             continue
         if kind:
             kinds[row["id"]] = kind
-    return kinds, answering
+    return kinds, answering, provisional
 
 
 def lineage(source, session):
@@ -266,16 +297,21 @@ def kinds_for(profile, source, session):
         entry = _kinds.get(key)
         if entry is None or entry["ids"] != ids:
             origin = source.execute("SELECT source FROM sessions WHERE id=?", (session,)).fetchone()
-            entry = {"ids": ids, "last": 0, "answering": None, "kinds": {},
+            entry = {"ids": ids, "last": 0, "answering": None, "provisional": None, "kinds": {},
                      "autonomous": bool(origin) and (origin[0] or "") in AUTONOMOUS_SOURCES}
         ordered = sorted(ids)
         rows = source.execute(
-            "SELECT id, role, content, display_kind, tool_calls FROM messages WHERE session_id IN (%s) "
+            "SELECT id, role, content, display_kind, tool_calls, finish_reason FROM messages WHERE session_id IN (%s) "
             "AND role IN ('user','assistant') AND id>? ORDER BY id" % ",".join("?" * len(ordered)),
             [*ordered, entry["last"]]).fetchall()
         if rows:
-            new, entry["answering"] = label_rows(rows, entry["autonomous"], entry["answering"])
-            entry["kinds"].update(new)
+            new, entry["answering"], entry["provisional"] = label_rows(
+                rows, entry["autonomous"], entry["answering"], entry["provisional"])
+            for rid, kind in new.items():
+                if kind:
+                    entry["kinds"][rid] = kind
+                else:
+                    entry["kinds"].pop(rid, None)
             entry["last"] = rows[-1]["id"]
         _kinds[key] = entry
         _kinds.move_to_end(key)
@@ -359,6 +395,7 @@ class Index:
         self.lock = threading.RLock()
         self.path, self.last, self.answering, self.latest, self.groups = path, 0, {}, {}, {}
         self.tips, self.sources, self.stamps = {}, {}, {}
+        self.provisional = {}  # chat -> its turn's provisional answer row, until the turn ends (PROVISIONAL)
         self.found = []  # person-facing replies read but not yet taken by the alert scan
         self.clock, self.sessions_read, self.stamp = clock, None, None  # when the sessions table was last read
 
@@ -401,18 +438,40 @@ class Index:
         for row in rows:
             self.last = row["id"]
             chat = self.tips.get(row["session_id"], row["session_id"])
+            autonomous = self.sources.get(chat) in AUTONOMOUS_SOURCES
             if row["role"] == "user":
+                kept = self.provisional.pop(chat, None)
+                if kept is not None:
+                    self._found(kept, chat)
                 self.answering[chat] = answers(row["content"], row["display_kind"])
-            elif is_reply(row, self.answering.get(chat), self.sources.get(chat) in AUTONOMOUS_SOURCES):
-                # Compacting a chat in place (Bot Chat, 2026-10-15) retires its rows and writes the kept ones
-                # again under new ids with their original timestamps: a reply no newer than one already
-                # seen there is such a copy, not news. It alerted a day of old replies at once.
-                if row["stamp"] is not None and row["stamp"] <= self.stamps.get(chat, float("-inf")):
-                    continue
-                if row["stamp"] is not None:
-                    self.stamps[chat] = row["stamp"]
-                self.latest[chat] = row["id"]
-                self.found.append((row["id"], chat))
+            elif (provisional_answer(row) and assistant_kind(row, self.answering.get(chat), autonomous) is None
+                  and is_reply({**dict(row), "finish_reason": "stop"}, self.answering.get(chat), autonomous)):
+                self.provisional[chat] = row
+            elif is_reply(row, self.answering.get(chat), autonomous):
+                self.provisional.pop(chat, None)
+                self._found(row, chat)
+            elif row["role"] == "assistant" and row["finish_reason"] == "stop" and chat in self.provisional:
+                # The turn ended in silence: its provisional answer is the reply (PROVISIONAL).
+                kept = self.provisional.pop(chat)
+                if (is_autonomous_silence if autonomous else is_silence)(row["content"]):
+                    self._found(kept, chat)
+
+    def settled(self):
+        """The row the alert cursor may move to: before any provisional answer whose turn is still open, so the answer
+        alerts when silence keeps it. A turn left open further back than PROVISIONAL_REACH rows holds it no longer."""
+        open_turns = [row["id"] - 1 for row in self.provisional.values() if self.last - row["id"] < PROVISIONAL_REACH]
+        return min([self.last, *open_turns])
+
+    def _found(self, row, chat):
+        # Compacting a chat in place (Bot Chat, 2026-10-15) retires its rows and writes the kept ones
+        # again under new ids with their original timestamps: a reply no newer than one already
+        # seen there is such a copy, not news. It alerted a day of old replies at once.
+        if row["stamp"] is not None and row["stamp"] <= self.stamps.get(chat, float("-inf")):
+            return
+        if row["stamp"] is not None:
+            self.stamps[chat] = row["stamp"]
+        self.latest[chat] = row["id"]
+        self.found.append((row["id"], chat))
 
     def group(self, chat):
         return self.groups.get(chat, "chats")

@@ -101,6 +101,29 @@ class ReplyScanTests(MobileCase):
         self.assertFalse(replies.is_silence("No reply needed, all done."))
         self.assertEqual(replies.prompt_kind('[Cronjob "Friday: clean-inbox" output — scheduled job, not the user.]', None), "cron")
 
+    def test_a_provisional_answer_kept_by_silence_alerts(self):
+        """Friday, 2026-10-27: Hermes's verify-on-stop gate stored the answer as provisional and the bot's [SILENT]
+        to the check-your-work nudge ended the turn. Silence keeps the answer; a later reply supersedes it."""
+        self.scan_twice()
+        self.script("""INSERT INTO messages VALUES(2,'chat','user','Do these dates work?',NULL,NULL,NULL,1);
+            INSERT INTO messages VALUES(3,'chat','assistant','Nov 16 and 18 are clear.',NULL,'verification_required',NULL,1);
+            INSERT INTO messages VALUES(4,'chat','assistant','[SILENT]',NULL,'verification_required',NULL,1);""")
+        self.scan_twice()
+        self.assertEqual(self.reply_rows(), [])  # the turn is still deciding
+        self.sql("INSERT INTO messages VALUES(5,'chat','assistant','[SILENT]',NULL,'stop',NULL,1)")
+        self.scan_twice()
+        self.assertEqual(self.reply_rows(), [3])
+        self.clear()
+        self.script("""INSERT INTO messages VALUES(6,'chat','user','And the 30th?',NULL,NULL,NULL,1);
+            INSERT INTO messages VALUES(7,'chat','assistant','Clear.',NULL,'verify_hook_continue',NULL,1);
+            INSERT INTO messages VALUES(8,'chat','assistant','',NULL,'tool_calls',NULL,1);
+            INSERT INTO messages VALUES(9,'chat','assistant','Clear, checked twice.',NULL,'stop',NULL,1);
+            INSERT INTO messages VALUES(10,'chat','user','Thanks',NULL,NULL,NULL,1);
+            INSERT INTO messages VALUES(11,'chat','assistant','Any time.',NULL,'verification_required',NULL,1);
+            INSERT INTO messages VALUES(12,'chat','user','Bye',NULL,NULL,NULL,1);""")
+        self.scan_twice()
+        self.assertEqual(self.reply_rows(), [9, 11])  # no reply came after 11 before the next prompt: it stands
+
     def test_compaction_copies_do_not_realert(self):
         """Bot Chat, 2026-10-15: compaction rewrote kept replies under new ids with their old timestamps,
         and every copy rang as new. A copy alerts nothing and leaves the chat read; a later reply alerts."""
@@ -583,6 +606,30 @@ class KindsTests(MobileCase):
                                                     "15": "bots", "16": "bots", "17": "bots", "18": "cron", "19": "summary"})
         self.assertNotIn("Hello", response.text)  # labels only, never message text
         self.assertEqual(self.call("GET", "/kinds", params={"profile": "nobody", "session": "tip"}).status_code, 404)
+
+    def test_a_provisional_answer_is_a_tool_step_unless_silence_keeps_it(self):
+        """Hermes's verify-on-stop answer (PROVISIONAL): superseded by the next reply, kept by a silence marker,
+        also when the turn ends between two looks at the chat (the cache carries the open turn)."""
+        def add(*rows):
+            with sqlite3.connect(self.source) as c:
+                c.executemany("INSERT INTO messages VALUES(?,'chat',?,?,NULL,?,NULL,1)", rows)
+
+        def kinds():
+            return self.call("GET", "/kinds", params={"profile": "jarvis", "session": "chat"}).json()["kinds"]
+
+        add((2, "user", "Dates?", None), (3, "assistant", "All clear.", "verification_required"),
+            (4, "assistant", "All clear, verified.", "stop"))
+        self.assertEqual(kinds(), {"3": "tools"})
+        add((5, "user", "And Friday?", None), (6, "assistant", "Friday is clear.", "verification_required"),
+            (7, "assistant", "[SILENT]", "verification_required"))
+        self.assertEqual(kinds(), {"3": "tools", "6": "tools", "7": "silent"})
+        add((8, "assistant", "[SILENT]", "stop"))
+        self.assertEqual(kinds(), {"3": "tools", "7": "silent", "8": "silent"})
+        rows = [{"id": 1, "role": "user", "content": "Hi", "display_kind": None, "tool_calls": None, "finish_reason": None},
+                {"id": 2, "role": "assistant", "content": "Hello.", "display_kind": None, "tool_calls": None,
+                 "finish_reason": "verify_hook_continue"},
+                {"id": 3, "role": "user", "content": "Bye", "display_kind": None, "tool_calls": None, "finish_reason": None}]
+        self.assertEqual(replies.message_kinds(rows), {})
 
     def test_kanban_notices_and_their_answers_are_machine_messages(self):
         notices = [
