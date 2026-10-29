@@ -73,14 +73,17 @@ def home_for(agent):
 
 
 def check_session(home, sid, auth_user):
-    """The chat exists on this bot and, when Hermes records a user, it is the caller's (Hermes's state, read-only)."""
+    """The chat exists on this bot and, for a dashboard user, is theirs (Hermes's state, read-only). The connector's
+    token (`auth_user` None) is the computer's owner, whose chats carry whatever user Hermes recorded: none for the
+    app's, "basic:…" for chats begun in 1.x, "uid:…" for Kanban, "cron-owner" for scheduled runs. Checking those
+    against None refused Auto Effort in every such chat as "not found" (2026-10-29)."""
     identifier(sid)
     try:
         with sqlite3.connect(f'file:{Path(home) / "state.db"}?mode=ro', uri=True, timeout=.1) as db:
             row = db.execute('SELECT user_id FROM sessions WHERE id=?', (sid,)).fetchone()
     except sqlite3.Error:
         raise Refused('session_unavailable', 503)
-    if not row or (row[0] and row[0] != auth_user):
+    if not row or (row[0] and auth_user is not None and row[0] != auth_user):
         raise Refused('session_not_found', 404)
 
 

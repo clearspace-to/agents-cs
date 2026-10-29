@@ -274,6 +274,7 @@ class RoutesTests(unittest.TestCase):
         with sqlite3.connect(self.root / 'profiles' / 'jarvis' / 'state.db') as db:
             db.execute('CREATE TABLE sessions(id TEXT PRIMARY KEY, user_id TEXT, model_config TEXT)')
             db.execute("INSERT INTO sessions VALUES('chat', NULL, '{}')")
+            db.execute("INSERT INTO sessions VALUES('old-chat', 'basic:mark', '{}')")
         self.routes = importlib.import_module(root.__name__ + '.routing.routes')
 
     def call(self, operation, method='GET', **body):
@@ -310,6 +311,14 @@ class RoutesTests(unittest.TestCase):
         self.assertEqual(self.call('turns', agentId='jarvis', sessionId='chat'), {'turns': []})
         for gone in ('plan', 'plan/arm'):
             self.assertEqual(self.refused(gone, 'POST', agentId='jarvis', sessionId='chat'), 'unknown_operation')
+
+    def test_the_connector_reaches_chats_hermes_recorded_a_user_for(self):
+        # Chats begun in 1.x ("basic:mark"), Kanban's ("uid:501") and scheduled runs carry a user; the connector's token
+        # is the computer's owner, so Auto Effort works in them too (2026-10-29). A dashboard user still sees only theirs.
+        self.assertEqual(self.call('session', agentId='jarvis', sessionId='old-chat')['autoEffortOverride'], None)
+        with self.assertRaises(self.routes.Refused) as refused:
+            self.routes.dispatch('session', 'GET', {'agentId': 'jarvis', 'sessionId': 'old-chat'}, 'owner', 'github:someone')
+        self.assertEqual(refused.exception.code, 'session_not_found')
 
 
 if __name__ == '__main__':
