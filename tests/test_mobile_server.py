@@ -608,6 +608,11 @@ class KindsTests(MobileCase):
                 {"id": 5, "role": "assistant", "content": "You are welcome.", "display_kind": None, "tool_calls": None, "finish_reason": "stop", "active": 1}]
         kinds = replies.message_kinds(rows)
         self.assertEqual(kinds, {1: "cron", 2: "summary", 4: "silent"})
+        # Hermes labels the hand-off internal_notification since 2026-10-24: the job's result still rings and shows.
+        labelled = [{**rows[0], "display_kind": "internal_notification"}, rows[1]]
+        self.assertEqual(replies.message_kinds(labelled), {1: "cron", 2: "summary"})
+        self.assertTrue(replies.is_reply(rows[1], replies.answers(labelled[0]["content"], "internal_notification")))
+        self.assertEqual(replies.prompt_kind("[CONTEXT COMPACTION — REFERENCE ONLY] x", "internal_notification"), "notes")
         answering = None
         for row in rows:
             if row["role"] == "user":

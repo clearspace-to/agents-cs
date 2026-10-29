@@ -149,12 +149,14 @@ def prompt_kind(content, display_kind):
     if rest:
         # Merged rows: what follows the notes decides (usually the person; possibly a job report).
         return prompt_kind(rest, None)
+    opening = next((kind for pattern, kind in PROMPT_OPENINGS if pattern.match(content or "")), None)
+    # Since 2026-10-24 Hermes labels a scheduled job's hand-off to the main chat internal_notification. Its result is
+    # still for the person: as a note it was hidden and never rang (Merlin's and Friday's job reports, 2026-10-29).
+    if display_kind == "internal_notification" and opening == "cron":
+        return opening
     if display_kind in DISPLAY_KINDS:
         return DISPLAY_KINDS[display_kind]
-    for pattern, kind in PROMPT_OPENINGS:
-        if pattern.match(content or ""):
-            return kind
-    return None
+    return opening
 
 
 def answers(content, display_kind):

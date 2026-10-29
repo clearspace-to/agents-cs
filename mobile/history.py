@@ -90,8 +90,11 @@ def _turn_start(messages, start):
 def _answer(messages, start, end, reset):
     rows = [_capped(m) for m in messages[start:end]]
     ids = [m["row_id"] for m in rows if m.get("row_id") is not None]
+    # The chat's oldest row with text (the app drops empty rows): a refresh tells the app whether rows it never held sit
+    # before its oldest one, so a chat saved short (before a compacted chat kept its history) offers Load earlier again.
+    oldest = next((m["row_id"] for m in messages if m.get("row_id") is not None and str(m.get("text") or "").strip()), None)
     return {"messages": rows, "count": len(messages), "has_more": start > 0, "reset": reset,
-            "first_row": min(ids) if ids else None, "last_row": max(ids) if ids else None}
+            "first_row": min(ids) if ids else None, "last_row": max(ids) if ids else None, "chat_first_row": oldest}
 
 
 def _capped(message):

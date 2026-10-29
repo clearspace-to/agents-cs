@@ -45,7 +45,8 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(len(answer["messages"]), 40)
         self.assertFalse(answer["has_more"])
         self.assertEqual(history.window([], tail=30), {"messages": [], "count": 0, "has_more": False, "reset": False,
-                                                        "first_row": None, "last_row": None})
+                                                        "first_row": None, "last_row": None,
+                                                        "chat_first_row": None})
 
     def test_tail_is_clamped(self):
         self.assertEqual(ids(history.window(self.messages, tail=0)), [28, 29, None, 30])
@@ -75,6 +76,10 @@ class WindowTests(unittest.TestCase):
         self.assertEqual(ids(history.window(self.messages, after=29)), [None, 30])  # the tool row after 29
         latest = history.window(self.messages, after=30)
         self.assertEqual((latest["messages"], latest["has_more"], latest["first_row"]), ([], True, None))
+        # Where the chat begins rides along, so an app that saved a short copy knows older rows exist.
+        self.assertEqual(latest["chat_first_row"], 1)
+        blank = [{"role": "assistant", "text": "  ", "row_id": 0}] + self.messages
+        self.assertEqual(history.window(blank, after=30)["chat_first_row"], 1)  # the app drops empty rows
 
     def test_a_row_no_longer_in_the_chat_answers_the_tail_with_reset(self):
         for name in ("after", "before", "since"):
@@ -167,8 +172,8 @@ class HistoryRouteTests(MobileCase):
         response = self.call("GET", "/history", params={"profile": "jarvis", "session": "chat", "tail": 2})
         self.assertEqual(response.status_code, 200)
         answer = response.json()
-        self.assertEqual(sorted(answer), ["count", "first_row", "has_more", "kinds", "kinds_version", "last_row",
-                                          "messages", "reset"])
+        self.assertEqual(sorted(answer), ["chat_first_row", "count", "first_row", "has_more", "kinds", "kinds_version",
+                                          "last_row", "messages", "reset"])
         self.assertEqual([m["row_id"] for m in answer["messages"]], [6, 7])
         self.assertEqual(answer["messages"][0], {"role": "user", "text": '[Cronjob "x" output]', "row_id": 6, "timestamp": 6})
         self.assertEqual((answer["count"], answer["has_more"], answer["reset"]), (7, True, False))
