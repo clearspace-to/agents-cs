@@ -1,5 +1,5 @@
 name: agents-cs
-version: 3.10.0
+version: 3.10.1
 license: Apache-2.0
 description: "The Agents CS app's host side in one plugin: native cards, forms and task routes (cards), push alerts and read state for the app (mobile), live voice (voice) and Auto effort (routing). A module that fails to load is reported by /api/plugins/agents-cs/info; the others keep working."
 author: "Clearspace"
