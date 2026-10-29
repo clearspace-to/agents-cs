@@ -52,7 +52,8 @@ CONTRACT = [
     ("tools.bot_live_delivery", "read_delivery_result", set()),
     # mobile/history.py builds GET /mobile/history with Hermes's own session.history builder (3.2.0); a dotted
     # attribute is a method on a class.
-    ("hermes_state", "SessionDB.get_messages_as_conversation", {"include_ancestors", "include_row_ids"}),
+    ("hermes_state", "SessionDB.get_messages_as_conversation",
+     {"include_ancestors", "include_row_ids", "include_compacted"}),
     ("tui_gateway.server", "_history_to_messages", {"profile_home"}),
 ]
 TABLES = {"tasks": {"id", "status", "assignee", "current_run_id"}, "task_comments": {"task_id"},

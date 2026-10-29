@@ -203,6 +203,47 @@ class HistoryRouteTests(MobileCase):
         self.assertEqual(response.status_code, 501, "no Hermes on this Mac: the builder can't be imported")
 
 
+class CompactedHistoryTests(unittest.TestCase):
+    """Hermes compacts a long chat in place; the loader asks for the archived rows too (Friday's Bot Chat, 2026-10-29)."""
+
+    def load_with(self, accepts_compacted):
+        import types
+        calls = []
+
+        class SessionDB:
+            def __init__(self, db_path, read_only):
+                pass
+
+            def get_messages_as_conversation(self, session, include_ancestors=False, include_row_ids=False, **extra):
+                if extra and not accepts_compacted:
+                    raise TypeError("unexpected keyword argument 'include_compacted'")
+                calls.append(extra)
+                return [{"role": "user", "content": "before the compaction", "_row_id": 1}]
+
+            def close(self):
+                pass
+
+        server = types.ModuleType("tui_gateway.server")
+        server._history_to_messages = lambda rows, profile_home: [{"role": r["role"], "text": r["content"]} for r in rows]
+        package = types.ModuleType("tui_gateway")
+        package.server = server
+        fakes = {"hermes_state": types.SimpleNamespace(SessionDB=SessionDB), "tui_gateway": package,
+                 "tui_gateway.server": server}
+        with patch.dict(sys.modules, fakes):
+            messages = REAL_LOAD("jarvis", "/tmp/state.db", "chat")
+        return messages, calls
+
+    def test_the_loader_reads_compacted_rows(self):
+        messages, calls = self.load_with(accepts_compacted=True)
+        self.assertEqual(calls, [{"include_compacted": True}])
+        self.assertEqual(messages, [{"role": "user", "text": "before the compaction"}])
+
+    def test_an_older_hermes_without_display_history_still_loads(self):
+        messages, calls = self.load_with(accepts_compacted=False)
+        self.assertEqual(calls, [{}])
+        self.assertEqual(len(messages), 1)
+
+
 class KindsCacheTests(RecordingCase):
     ROWS = [(10, "user", "[System: model switched]", None, None), (11, "user", "Hello?", None, None),
             (12, "assistant", "[SILENT]", None, None), (13, "user", "x", "process_complete", None),

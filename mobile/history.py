@@ -1,7 +1,8 @@
 """A window of a chat's transcript for ``GET /mobile/history``, in Hermes's own ``session.history`` row shape.
 
 ``load`` builds the rows with Hermes's own history builder (``hermes_state.SessionDB`` read-only, then
-``tui_gateway.server._history_to_messages``), so they are identical to what ``session.history`` sends; ``window``
+``tui_gateway.server._history_to_messages``), so they are in ``session.history``'s shape, plus the rows a compaction
+archived (Hermes's own display read, ``include_compacted``); ``window``
 cuts the part the app asked for. The app resumes with ``omit_messages: true`` and reads the transcript here, so a long
 chat costs its window, not the whole history (Merlin's Bot Chat: 12 MB per open, 2026-10-22).
 
@@ -32,7 +33,14 @@ def _hermes_messages(path, session, profile_home):
         raise HistoryUnavailable(str(error)) from error
     db = SessionDB(db_path=path, read_only=True)
     try:
-        history = db.get_messages_as_conversation(session, include_ancestors=True, include_row_ids=True)
+        # Hermes compacts a long chat in place: the summarised rows go inactive and session.history stops listing
+        # them. include_compacted is Hermes's display read (deduped, never fed to the model), so a compacted chat
+        # keeps its whole history on the phone (Friday's Bot Chat, 2026-10-29: 99 rows listed of 15,267).
+        try:
+            history = db.get_messages_as_conversation(session, include_ancestors=True, include_row_ids=True,
+                                                      include_compacted=True)
+        except TypeError:  # a Hermes from before display history (2026-09)
+            history = db.get_messages_as_conversation(session, include_ancestors=True, include_row_ids=True)
     finally:
         db.close()
     return build(history, profile_home=Path(profile_home))
