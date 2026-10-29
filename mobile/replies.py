@@ -563,9 +563,9 @@ def display_name(profile):
 
 # A scheduled run whose result goes to the bot's main chat rings once, from the main chat (Mark,
 # 2026-10-13). The run's own alert waits while Hermes is still handing the result over (the main chat
-# may be busy with another turn) and is dropped once it got there; the cards plugin (cron_archive.py)
-# archives the run. It rings only when the hand-off didn't happen: the run failed, the delivery failed,
-# or the job delivers somewhere else. Read from Hermes' own records and the cards plugin's relay ledger, read-only (run_handoff).
+# may be busy with another turn) and is dropped once it got there. The run stays in Scheduled (Mark,
+# 2026-10-29: never archived automatically) but is never unread (``state.unread_for``). It rings only when
+# the hand-off didn't happen: the run failed, the delivery failed, or the job delivers somewhere else. Read from Hermes' own records and the cards plugin's relay ledger, read-only (run_handoff).
 
 SCHEDULED_HOLD = 10        # the run's bookkeeping lands just after its reply
 SCHEDULED_MAX_WAIT = 15 * 60  # a hand-off stuck this long rings anyway, saying so (Mark, 2026-10-13)

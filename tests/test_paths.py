@@ -68,9 +68,7 @@ class HomeResolutionTests(unittest.TestCase):
     def test_data_files_stay_where_they_were(self):
         with tempfile.TemporaryDirectory() as tmp, patch.dict(sys.modules, fake_hermes(tmp, tmp)):
             voice = importlib.import_module(root.__name__ + ".voice.preferences")
-            cron = importlib.import_module(root.__name__ + ".cards.cron_archive")
             self.assertEqual(store.FormStore().path, Path(tmp) / "hermes-bots-cards" / "forms.db")
-            self.assertEqual(cron.Decided().path, Path(tmp) / "hermes-bots-cards" / "cron-archive.db")
             self.assertEqual(voice.default_path(), Path(tmp) / "hermes-bots-voice" / "voices.json")
             routing = importlib.import_module(root.__name__ + ".routing.effort")
             self.assertEqual(routing.Store(tmp).path, Path(tmp) / "jev-routing-v2.sqlite")

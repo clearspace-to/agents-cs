@@ -18,8 +18,7 @@ disagree (Windy's 10:00 nudge on 2026-10-14). Hermes itself is never changed; th
 * ``context_for`` (``pre_llm_call``, any other turn in that chat) names the results relayed here in the
   last day and their run chats, so the bot reads the run when Mark asks about one.
 
-The relay ledger is what the archiver (``cron_archive.py``) and the mobile module read to know a run's
-result reached the main chat: no receipts, no matching by job name and time.
+The relay ledger is what the mobile module reads to know a run's result reached the main chat: no receipts, no matching by job name and time.
 """
 from __future__ import annotations
 

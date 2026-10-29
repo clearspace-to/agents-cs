@@ -78,7 +78,8 @@ def store_attention(con, report):
 
 
 def unread_for(con, owner):
-    """[(profile, chat, group)] unread for this owner, in every group but archived. The first look
+    """[(profile, chat, group)] unread for this owner, in every group but archived. A scheduled run is never
+    unread (Mark, 2026-10-29): Scheduled shows that a job ran, its result reaches the main chat. The first look
     at a profile sets a baseline, so history from before sync existed is not flagged."""
     result = []
     for profile, path in replies.sources():
@@ -96,8 +97,8 @@ def unread_for(con, owner):
             "SELECT chat, read_id, unread FROM reads WHERE owner=? AND profile=?", (owner, profile))}
         for chat, rid in latest.items():
             read_id, manual = reads.get(chat, (0, 0))
-            if manual or rid > max(base[0], read_id or 0):
-                result.append((profile, chat, index.group(chat)))
+            if (manual or rid > max(base[0], read_id or 0)) and (group := index.group(chat)) != "scheduled":
+                result.append((profile, chat, group))
     return result
 
 

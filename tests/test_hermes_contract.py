@@ -47,7 +47,7 @@ CONTRACT = [
     ("agent.secret_scope", "build_profile_secret_scope", set()),
     ("agent.secret_scope", "set_secret_scope", {"profile_home"}),
     ("agent.secret_scope", "reset_secret_scope", set()),
-    # cron_archive.py and mobile/history.py (read_only)
+    # mobile/history.py (read_only)
     ("hermes_state", "SessionDB", {"db_path", "read_only"}),
     ("tools.bot_live_delivery", "read_delivery_result", set()),
     # mobile/history.py builds GET /mobile/history with Hermes's own session.history builder (3.2.0); a dotted
@@ -91,22 +91,16 @@ class HermesContractTests(unittest.TestCase):
         finally:
             conn.close()
 
-    def test_what_the_cron_run_archive_reads(self):
-        # cron_archive.py swallows every error so it can't break Hermes; a rename upstream would quietly
-        # stop archiving. Its reads, archive call and Hermes' Bot Chat delivery id are checked here.
+    def test_what_cron_runs_reads(self):
+        # mobile/cron_runs.py tells which run a cron chat belongs to from Hermes's executions and run chat titles.
         import sqlite3
         from pathlib import Path
-        from hermes_state import SessionDB
         from cron import executions
-        self.assertTrue(callable(getattr(SessionDB, "set_session_archived", None)))
         con = sqlite3.connect(":memory:")
         executions._initialize_schema(con)
         present = {row[1] for row in con.execute("PRAGMA table_info(executions)")}
         self.assertTrue({"id", "job_id", "status", "delivery_outcome", "started_at"} <= present)
-        source = (Path(executions.__file__).parent / "scheduler_delivery.py").read_text()
-        self.assertIn("[str(source_home), job_id, str(run_id), str(home)]", source,
-                      "Hermes changed how it keys a Bot Chat delivery; update cron_archive.delivery_id")
-        # mobile/cron_runs.py tells a local-<hash> run chat's job by the title Hermes gives it when the run ends.
+        # A local-<hash> run chat's job is told by the title Hermes gives it when the run ends.
         scheduler = (Path(executions.__file__).parent / "scheduler.py").read_text()
         self.assertIn('" ".join(job_name.split())[:60].strip()', scheduler, "Hermes changed a run chat's title; update cron_runs")
         self.assertIn("f\"{_title_base} · {safe_strftime(_hermes_now(), '%b %d %H:%M')}\"", scheduler,

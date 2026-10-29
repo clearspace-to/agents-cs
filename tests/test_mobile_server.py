@@ -202,7 +202,7 @@ class ReplyScanTests(MobileCase):
         self.assertEqual(self.reply_chats(), ["chat", "h"])
         self.assertEqual(self.rows("state='held'"), [])
         groups = sorted(g for _, _, g in state.unread_for(self.con, state.OWNER))
-        self.assertEqual(groups, ["chats", "hidden", "messaging", "oneshot", "scheduled"])  # kanban never
+        self.assertEqual(groups, ["chats", "hidden", "messaging", "oneshot"])  # kanban never; a run is never unread
         self.assertIsNone(replies.chat_group("cron", 1, 0))  # a hidden run is in none of the app's lists
 
     def test_bot_chat_always_alerts_and_badges(self):
@@ -254,7 +254,21 @@ class ReplyScanTests(MobileCase):
         self.assertEqual(self.reply_chats(IPAD), ["bc"])    # filtered to another bot: Bot Chats still ring
         held = {r["device_id"] for r in self.rows("state='held'")}
         self.assertEqual(held, {PHONE})                       # the scheduled run, only where it is listed
-        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 2)
+        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 1)  # the Bot Chat: a run never counts
+
+    def test_a_scheduled_run_is_never_unread(self):
+        """Scheduled shows that a job ran; its result reaches the main chat (Mark, 2026-10-29). Marked unread by hand, still not."""
+        scan.scan(self.con, "jarvis", self.source)
+        state.unread_for(self.con, state.OWNER)
+        state.set_view(self.con, PHONE, ["chats", "scheduled"], [])
+        self.session("run", "cron")
+        self.reply(10, chat="run")
+        self.reply(12)
+        self.assertEqual([chat for _, chat, _ in state.unread_for(self.con, state.OWNER)], ["chat"])
+        state.record_read(self.con, state.OWNER, "jarvis", "run", True, 0)
+        self.assertEqual([chat for _, chat, _ in state.unread_for(self.con, state.OWNER)], ["chat"])
+        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 1)
+        self.assertEqual([entry["chat"] for entry in self.call("GET", "/reads").json()["unread"]], ["chat"])
 
     def test_unlisted_device_defaults_to_chats_and_hidden(self):
         self.scan_twice()

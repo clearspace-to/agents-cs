@@ -14,12 +14,10 @@ restarts, redoes, drops or reorders its main task's steps), the ``native-cards``
 * ``pre_approval_request``, ``post_approval_response``, ``post_llm_call`` and the clarify tool's
   ``pre_tool_call``/``post_tool_call`` tell the mobile module about approvals, questions and finished
   turns (``alerts.py``, formerly the ``mobile-push-approvals`` plugin).
-* ``post_llm_call`` also archives a scheduled run's chat once Hermes confirms its result reached the
-  main chat (``cron_archive.py``).
 * A scheduled job's result reaches the main chat as the run wrote it (``relay.py``): the hand-off turn's
   reply is replaced by the run's text under a ``<job> · <time>`` label, its tools are blocked, a run for
   the bot's own Bot Chat keeps its cards, and the relay ledger (``store.RelayLog``) records which run a
-  result came from, for the archiver, the mobile module and the bot itself (it is told the run chat on
+  result came from, for the mobile module and the bot itself (it is told the run chat on
   later turns).
 * ``pre_tool_call`` guards Kanban work (``tasks.tool_call_block``): a coordinator session stays inside its
   root's family.
@@ -42,7 +40,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from . import alerts, cards, cron_archive, tasks, creation, notify, relay
+from . import alerts, cards, tasks, creation, notify, relay
 from .store import DecisionLog, FormStore, RelayLog
 
 TOOLSET = "hermes_bots_cards"
@@ -574,8 +572,6 @@ def register(ctx: Any) -> None:
     ctx.register_hook("pre_approval_request", alerts.on_request)
     ctx.register_hook("post_approval_response", alerts.on_response)
     ctx.register_hook("post_llm_call", alerts.on_turn)
-    # A scheduled run whose result reached the main chat is archived out of Scheduled (cron_archive.py).
-    ctx.register_hook("post_llm_call", cron_archive.on_turn)
     # Hermes's Kanban observers (VALID_HOOKS): fired after the commit, in whichever process drove it.
     ctx.register_hook("kanban_task_blocked", on_kanban_task_blocked)
     ctx.register_hook("kanban_task_completed", on_kanban_task_completed)

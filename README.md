@@ -6,7 +6,7 @@ Hermes's documented plugin surface (tools, hooks, a skill, request middleware, a
 
 | Module | What it does | Where it runs |
 |---|---|---|
-| `cards` | Native cards and forms, decisions, the approval/question/task/turn hooks that ring the phone, the task experience (board, quick add, comments, answers), Kanban hooks, scheduled-run relay and archive | Every bot process (hooks, tools); routes in `hermes serve` |
+| `cards` | Native cards and forms, decisions, the approval/question/task/turn hooks that ring the phone, the task experience (board, quick add, comments, answers), Kanban hooks, scheduled-run relay | Every bot process (hooks, tools); routes in `hermes serve` |
 | `mobile` | Alerts and read state for the app (formerly the separate push bridge): reply scan, sealed alerts, the outbox the connector drains, unread/badge/inbox-filter state, API usage | Alert writing in any process; the scan worker and `/mobile/*` routes in `hermes serve` (root home) |
 | `voice` | Live voice media routes (Codex subscription), per-bot voice choice | `hermes serve` only |
 | `routing` | Auto effort: one classifier call per turn picks low, medium or high reasoning on the chat's own model, when the app switches it on for a bot or a chat (see `routing/README.md`) | Every bot process (`pre_llm_call` and `llm_request` middleware); routes in `hermes serve` |
@@ -74,7 +74,7 @@ Routing's model switching and the card guard are gone) and are ignored where the
 
 Every path comes from Hermes's home API (`hermes_constants.get_hermes_home` / `get_default_hermes_root`), never a
 hard-coded home. Data files keep the names the earlier plugins gave them: `<root>/hermes-bots-cards/forms.db`,
-`<root>/hermes-bots-cards/cron-archive.db`, `<home>/hermes-bots-voice/voices.json`, `<home>/jev-routing-v2.sqlite`.
+`<home>/hermes-bots-voice/voices.json`, `<home>/jev-routing-v2.sqlite`.
 New in 2.0, fresh (nothing migrates): `<root>/agents-cs/delivery.db` (and its `delivery.nudge`), `connector.json`.
 
 ## Tests
