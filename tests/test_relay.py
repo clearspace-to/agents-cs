@@ -132,6 +132,19 @@ class HookTests(HomeMixin, unittest.TestCase):
         self.runs.close()
         self.temp.cleanup()
 
+    def test_a_local_run_chat_for_bot_chat_keeps_its_table_card(self):
+        """Since Hermes's 2026-10-24 update a run chat is local-<hash>: its cards must still reach Bot Chat, not
+        turn into pipe text (Windy's 10am nudge, 2026-10-29)."""
+        self.make_run("local-abc", NOW - 600, "", execution="e9", opened=0.03)
+        card_id = json.loads(self.ctx.tools["hermes_card_table"][1](EXAMPLES["table"], session_id="local-abc"))["card_id"]
+        reply = self.hooks["transform_llm_output"](response_text="Hiring nudge", session_id="local-abc", platform="cron")
+        self.assertEqual([c["id"] for c in cards.cards_in(reply)], [card_id])
+        self.runs.execute("UPDATE executions SET job_id = 'def456' WHERE id = 'e9'")
+        self.runs.commit()
+        self.ctx.tools["hermes_card_table"][1](EXAMPLES["table"], session_id="local-abc")
+        reply = self.hooks["transform_llm_output"](response_text="Hiring nudge", session_id="local-abc", platform="cron")
+        self.assertEqual(cards.cards_in(reply), [])
+
     def test_the_reply_is_the_run_result_whatever_the_model_wrote(self):
         context = self.hooks["pre_llm_call"](session_id="bot", user_message=handoff("Two items need you."))
         self.assertIn("exactly as written", context["context"])

@@ -35,8 +35,10 @@ from __future__ import annotations
 import json
 import re
 import os
+import sqlite3
 import threading
 import time
+from contextlib import closing
 from pathlib import Path
 from typing import Any
 
@@ -203,19 +205,39 @@ def _run_for_bot_chat(platform: str, session_id: str) -> bool:
     result there as written (relay.py), where they can be answered (2026-10-14)."""
     if (platform or "").lower() != "cron":
         return False
-    match = re.match(r"cron_([0-9a-f]{6,64})_", session_id or "")
-    if not match:
+    job_id = _cron_job_of(session_id)
+    if not job_id:
         return False
     try:
         data = json.loads((_hermes_home() / "cron" / "jobs.json").read_text(encoding="utf-8"))
     except Exception:
         return False
     jobs = data.get("jobs", []) if isinstance(data, dict) else data
-    job = next((j for j in jobs if isinstance(j, dict) and j.get("id") == match.group(1)), None)
+    job = next((j for j in jobs if isinstance(j, dict) and j.get("id") == job_id), None)
     targets = (job or {}).get("deliver") or ""
     targets = targets if isinstance(targets, list) else str(targets).split(",")
     own = {"bot-chat", f"bot-chat:{_PROFILE}"}
     return bool(targets) and all(str(t).strip() in own for t in targets if str(t).strip())
+
+
+def _cron_job_of(session_id: str) -> str:
+    """The job a run chat belongs to. Since Hermes's 2026-10-24 update the chat is ``local-<hash>``, not
+    ``cron_<job>_…``, so it is told from the chat's start (``cron_runs.job_of``); before this the Windy
+    nudge's table card fell back to pipe text in Bot Chat (Mark, 2026-10-29)."""
+    match = re.match(r"cron_([0-9a-f]{6,64})_", session_id or "")
+    if match:
+        return match.group(1)
+    from ..mobile import cron_runs  # stdlib only, but mobile's code loads only where it's used
+    home = _hermes_home()
+    try:
+        with closing(sqlite3.connect(f"file:{home / 'state.db'}?mode=ro", uri=True, timeout=5)) as state:
+            row = state.execute("SELECT started_at, title FROM sessions WHERE id = ?", (session_id or "",)).fetchone()
+    except sqlite3.Error:
+        return ""
+    if not row:
+        return ""
+    return cron_runs.job_of(session_id, row[0], row[1], cron_runs.runs(home / "cron" / "executions.db"),
+                            cron_runs.jobs(home))
 
 
 def _background_review() -> bool:
