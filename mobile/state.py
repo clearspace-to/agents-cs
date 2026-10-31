@@ -33,10 +33,11 @@ def set_view(con, device_id, groups, bots):
 
 
 def attention_count(con):
-    """What needs the person beside unread chats (Mark, 2026-10-08): the bots' open decisions and the
-    board tasks waiting on him, as the cards module last reported them (``events.attention``)."""
+    """What the badge counts beside unread chats: the bots' open chat decisions, as the cards module last reported
+    them (``events.attention``). Board tasks waiting on the person ring and badge the Kanban tab, never the app icon
+    (Mark, 2026-10-31: a blocked task left a 1 on the icon with nothing in the inbox)."""
     try:
-        row = con.execute("SELECT COALESCE(SUM(count), 0) AS n FROM attention").fetchone()
+        row = con.execute("SELECT COALESCE(SUM(decisions), 0) AS n FROM attention").fetchone()
     except sqlite3.Error:
         return 0
     return int(row["n"] if row else 0)
@@ -103,8 +104,8 @@ def unread_for(con, owner):
 
 
 def badge_for(con, owner, device_id, unread=None):
-    """The number the app icon shows: unread chats this device's inbox lists, plus every decision and
-    board task that needs the person (the inbox's Review rows), so the badge and the rows agree."""
+    """The number the app icon shows: unread chats this device's inbox lists, plus every open chat decision
+    (the inbox's Review rows), so the badge and the rows agree. Board tasks don't count (``attention_count``)."""
     view = view_for(con, device_id)
     unread = unread_for(con, owner) if unread is None else unread
     return sum(1 for profile, chat, group in unread if in_view(view, profile, group)) + attention_count(con)

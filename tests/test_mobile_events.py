@@ -126,16 +126,16 @@ class EventTests(MobileCase):
         with self.assertRaises(Exception):
             self.opened(self.only(IPAD), self.phone)
 
-    def test_attention_counts_in_the_badge_and_clears_resolved_tasks(self):
+    def test_decisions_count_in_the_badge_tasks_dont_and_resolved_tasks_clear(self):
         report = {"board": "default", "count": 3, "decisions": 1,
                   "tasks": [{"id": "t_1", "title": "Choose a date", "bot": "jarvis", "kind": "decision"},
                             {"id": "t_2", "title": "Review the CO", "bot": "jarvis", "kind": "review"}]}
         self.assertEqual(events.attention(report), [])
-        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 3, "no unread chats, three things need the person")
+        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 1, "the decision counts; board tasks badge only the Kanban tab")
         first = [json.loads(r["payload_json"]) for r in self.queued()]
         self.assertEqual({tuple(p["aps"]) for p in first}, {("badge",), ("content-available",)}, "every device's badge follows at once")
         reads = self.call("GET", "/reads").json()
-        self.assertEqual((reads["count"], reads["attention"]["count"]), (3, 3))
+        self.assertEqual((reads["count"], reads["attention"]["count"]), (1, 3))
         self.assertEqual([t["id"] for t in reads["attention"]["tasks"]], ["t_1", "t_2"])
         self.clear()
         events.attention(report)
@@ -144,7 +144,7 @@ class EventTests(MobileCase):
         resolved = [json.loads(r["payload_json"]) for r in self.queued() if r["push_type"] == "background"
                     and "taskResolved" in json.loads(r["payload_json"]).get("hermes", {})]
         self.assertEqual(resolved[0]["hermes"]["taskResolved"], {"task": "t_1", "board": "default"})
-        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 1)
+        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 0, "a task still waiting never counts on the icon")
 
     def test_attention_is_kept_even_with_no_devices(self):
         self.link([])

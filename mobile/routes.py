@@ -85,7 +85,7 @@ def reads(request: Request, all: bool = False):
     # "through": where reading stopped, so the app opens the chat at "Since you last read" (2026-10-11).
     return {"unread": [{"profile": p, "chat": c, "group": g, "through": through(p, c)}
                        for p, c, g in (unread if all else listed)],
-            "count": len(listed) + attention["count"], "attention": attention}
+            "count": len(listed) + attention["decisions"], "attention": attention}  # board tasks never badge the icon
 
 
 class ReadChange(BaseModel):

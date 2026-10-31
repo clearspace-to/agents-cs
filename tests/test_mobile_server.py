@@ -753,13 +753,13 @@ class KindsTests(MobileCase):
         self.assertNotIn("text", sealed.with_full_text(base, "é" * 1000))  # escapes to 6 bytes each
         self.assertNotIn("text", sealed.with_full_text(base, None))
 
-    def test_attention_and_unread_add_up(self):
+    def test_decisions_and_unread_add_up_tasks_dont(self):
         self.reply(10, "New reply")
         state.unread_for(self.con, state.OWNER)  # baseline
         self.reply(20, "Later reply")
-        self.con.execute("INSERT OR REPLACE INTO attention VALUES('default', 2, 1, '[]', 0)")
+        self.con.execute("INSERT OR REPLACE INTO attention VALUES('default', 2, 1, '[]', 0)")  # a decision and a task
         self.con.commit()
-        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 3)
+        self.assertEqual(state.badge_for(self.con, state.OWNER, PHONE), 2)
 
 
 if __name__ == "__main__":
